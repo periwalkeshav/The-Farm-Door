@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+    :root {
+      --ivory: #F7F2E8;
+      --paper: #FFFDF8;
+      --forest: #1F3B2D;
+      --forest-deep: #16301F;
+      --ink: #27231F;
+      --muted: #6A6158;
+      --line: #DDD3C1;
+      --saffron: #E3A33B;
+      --saffron-deep: #A8641A;
+      --chilli: #B5412C;
+      --arch-w: clamp(240px, min(30vw, 50vh), 380px);
+      color-scheme: light;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      font-family: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(60rem 40rem at 85% -10%, rgba(227, 163, 59, .16), transparent 60%),
+        radial-gradient(50rem 36rem at -10% 110%, rgba(143, 167, 122, .16), transparent 60%),
+        var(--ivory);
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Fine paper grain */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .5;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .2 0 0 0 0 .16 0 0 0 0 .1 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    [hidden] { display: none !important; }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
+
+    .page {
+      position: relative;
+      min-height: 100vh;
+      min-height: 100svh;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 32px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+    .shell { overflow-x: clip; }
+
+    /* Header */
+    .top { padding: 28px 0 8px; display: flex; align-items: center; }
+    .brand {
+      display: inline-flex; align-items: center; gap: 10px;
+      color: var(--forest); text-decoration: none;
+    }
+    .brand svg { width: 36px; height: 36px; flex: none; }
+    .brand span {
+      font-family: "Fraunces", Georgia, serif;
+      font-weight: 600; font-size: 22px; letter-spacing: -.01em;
+    }
+
+    /* Hero */
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+      align-items: center;
+      gap: clamp(32px, 6vw, 88px);
+      padding: 24px 0 56px;
+    }
+
+    .pill {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 7px 14px 7px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 253, 248, .7);
+      color: var(--forest);
+      font-size: 12.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    }
+    .pill .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--saffron);
+      animation: pulse 2.4s ease-out infinite;
+    }
+
+    h1 {
+      font-family: "Fraunces", Georgia, serif;
+      font-weight: 500;
+      font-size: clamp(2.5rem, 5.2vw, 4.5rem);
+      line-height: 1.04;
+      letter-spacing: -.025em;
+      color: var(--forest);
+      margin: 24px 0 20px;
+      text-wrap: balance;
+    }
+    h1 em { font-style: italic; font-weight: 450; color: var(--saffron-deep); }
+
+    .lede {
+      margin: 0;
+      max-width: 34rem;
+      font-size: clamp(1.02rem, 1.3vw, 1.14rem);
+      line-height: 1.7;
+      color: var(--muted);
+      text-wrap: pretty;
+    }
+
+    /* Notify form */
+    .notify { margin-top: 34px; max-width: 31rem; }
+    .field {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      box-shadow: 0 18px 36px -24px rgba(31, 59, 45, .45);
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .field:focus-within {
+      border-color: var(--forest);
+      box-shadow: 0 0 0 4px rgba(227, 163, 59, .28), 0 18px 36px -24px rgba(31, 59, 45, .45);
+    }
+    .field input {
+      flex: 1; min-width: 0;
+      border: 0; outline: 0; background: transparent;
+      padding: 12px 8px 12px 18px;
+      font: 500 16px/1.2 "Manrope", system-ui, sans-serif;
+      color: var(--ink);
+    }
+    .field input::placeholder { color: #9A8F82; }
+    .field button {
+      flex: none;
+      display: inline-flex; align-items: center; gap: 8px;
+      border: 0; border-radius: 999px;
+      padding: 13px 20px 13px 22px;
+      background: var(--forest); color: var(--ivory);
+      font: 700 15px/1 "Manrope", system-ui, sans-serif;
+      cursor: pointer;
+      transition: background-color .2s, transform .15s;
+    }
+    .field button:hover { background: var(--forest-deep); }
+    .field button:active { transform: scale(.97); }
+    .field button:focus-visible { outline: 2px solid var(--saffron); outline-offset: 2px; }
+    .field button[disabled] { opacity: .7; cursor: progress; }
+    .field button svg { width: 16px; height: 16px; transition: transform .2s; }
+    .field button:hover svg { transform: translateX(2px); }
+
+    .fine { margin: 12px 0 0 20px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+    .form-status { margin: 10px 0 0 20px; font-size: 14px; font-weight: 600; color: var(--chilli); }
+    .form-status:empty { display: none; }
+
+    .success {
+      display: flex; align-items: center; gap: 14px;
+      padding: 16px 20px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: 0 18px 36px -24px rgba(31, 59, 45, .45);
+    }
+    .success[hidden] { display: none; }
+    .success svg { width: 36px; height: 36px; flex: none; }
+    .success strong { display: block; color: var(--forest); font-size: 16px; }
+    .success span { color: var(--muted); font-size: 14px; }
+
+    .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+
+    /* The door */
+    .visual { display: flex; justify-content: center; padding: 40px 0 28px; }
+    .stage { position: relative; width: calc(var(--arch-w) + 27px); }
+
+    .stage::before { /* ground line */
+      content: ""; position: absolute; z-index: 1;
+      left: -22%; right: -22%; bottom: 0; height: 1.5px;
+      background: linear-gradient(90deg, transparent, rgba(31, 59, 45, .32) 18%, rgba(31, 59, 45, .32) 82%, transparent);
+    }
+    .stage::after { /* warm light spilling out of the doorway */
+      content: ""; position: absolute;
+      left: 50%; bottom: -30px; width: 130%; height: 60px;
+      transform: translateX(-50%);
+      background: radial-gradient(closest-side, rgba(227, 163, 59, .38), transparent);
+      animation: fade-in 1.8s ease 1.6s both;
+    }
+
+    .frame {
+      position: relative;
+      padding: 12px 12px 0;
+      border: 1.5px solid rgba(31, 59, 45, .28);
+      border-bottom: 0;
+      border-radius: 999px 999px 0 0;
+    }
+    .arch {
+      position: relative;
+      aspect-ratio: 380 / 520;
+      border-radius: 999px 999px 0 0;
+      overflow: hidden;
+      clip-path: inset(0 round 999px 999px 0 0);
+      perspective: 1400px;
+      background: #F3D59C;
+    }
+    .scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .scene .sun { animation: rise 3s cubic-bezier(.2, .7, .2, 1) .9s both; }
+
+    .door {
+      position: absolute; top: 0; bottom: 0; width: 50%;
+      background:
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, .025) 0 2px, transparent 2px 9px),
+        linear-gradient(180deg, #25452F, #1A3424);
+    }
+    .door-left {
+      left: 0; transform-origin: left center;
+      box-shadow: inset -1px 0 0 rgba(0, 0, 0, .35);
+      animation: open-left 2.3s cubic-bezier(.7, 0, .2, 1) .7s both;
+    }
+    .door-right {
+      right: 0; transform-origin: right center;
+      box-shadow: inset 1px 0 0 rgba(255, 255, 255, .06);
+      animation: open-right 2.3s cubic-bezier(.7, 0, .2, 1) .7s both;
+    }
+    .door::before, .door::after {
+      content: ""; position: absolute; left: 16%; right: 16%;
+      border: 1px solid rgba(255, 255, 255, .1);
+      border-radius: 3px;
+      box-shadow: inset 0 0 0 7px rgba(0, 0, 0, .07), inset 0 0 0 8px rgba(255, 255, 255, .05);
+    }
+    .door::before { top: 25%; height: 30%; }
+    .door::after { top: 61%; height: 31%; }
+    .handle {
+      position: absolute; top: 55%; width: 6px; height: 36px; border-radius: 3px;
+      background: linear-gradient(180deg, #EBCB83, #B08636);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, .35);
+    }
+    .door-left .handle { right: 9px; }
+    .door-right .handle { left: 9px; }
+
+    /* Floating spices */
+    .spice {
+      position: absolute; z-index: 3; height: auto;
+      transform: rotate(var(--r, 0deg));
+      filter: drop-shadow(0 10px 12px rgba(31, 59, 45, .18));
+      animation:
+        pop .9s cubic-bezier(.2, .8, .2, 1) var(--d) both,
+        float var(--t, 8s) ease-in-out calc(var(--d) + .9s) infinite;
+    }
+    .s-anise    { top: 3%;   left: -21%;  width: 30%; --r: 14deg;  --d: 1.7s;  --t: 8s; }
+    .s-cardamom { top: 11%;  right: -15%; width: 19%; --r: -22deg; --d: 1.85s; --t: 7s; }
+    .s-chilli   { top: 41%;  right: -27%; width: 38%; --r: 16deg;  --d: 2s;    --t: 9s; }
+    .s-bay      { top: 47%;  left: -25%;  width: 29%; --r: -26deg; --d: 2.15s; --t: 7.5s; }
+    .s-cinnamon { bottom: 3%; left: -21%; width: 40%; --r: -10deg; --d: 2.3s;  --t: 8.5s; }
+    .s-pepper   { bottom: 9%; right: -17%; width: 19%; --r: 0deg;  --d: 2.45s; --t: 6.5s; }
+
+    /* Copy entrance */
+    .reveal { animation: up .9s cubic-bezier(.2, .8, .2, 1) var(--d, 0s) both; }
+
+    /* Footer */
+    .bottom {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 22px 0 28px;
+      border-top: 1px solid var(--line);
+      font-size: 13px; color: var(--muted);
+    }
+    .bottom span { text-wrap: balance; }
+
+    @keyframes open-left  { to { transform: rotateY(80deg);  filter: brightness(.74); } }
+    @keyframes open-right { to { transform: rotateY(-80deg); filter: brightness(.74); } }
+    @keyframes rise { from { transform: translateY(70px); } to { transform: none; } }
+    @keyframes fade-in { from { opacity: 0; } }
+    @keyframes pop { from { opacity: 0; scale: .6; } }
+    @keyframes float {
+      0%, 100% { translate: 0 0; rotate: 0deg; }
+      50% { translate: 0 -10px; rotate: 4deg; }
+    }
+    @keyframes up { from { opacity: 0; transform: translateY(14px); } }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(227, 163, 59, .55); }
+      70%, 100% { box-shadow: 0 0 0 9px rgba(227, 163, 59, 0); }
+    }
+
+    /* Tablet and phone */
+    @media (max-width: 960px) {
+      :root { --arch-w: clamp(196px, 50vw, 280px); }
+      .page { padding: 0 20px; }
+      .top { justify-content: center; padding-top: 22px; }
+      .hero { grid-template-columns: 1fr; gap: 8px; padding: 0 0 44px; text-align: center; }
+      .visual { order: -1; padding: 30px 0 26px; }
+      .lede { margin: 0 auto; }
+      .notify { margin: 30px auto 0; }
+      .fine, .form-status { margin-left: 0; }
+      .success { text-align: left; }
+      .s-anise    { left: -15%; }
+      .s-cardamom { right: -11%; }
+      .s-chilli   { right: -17%; width: 34%; }
+      .s-bay      { left: -16%; width: 26%; }
+      .s-cinnamon { left: -14%; width: 36%; }
+      .s-pepper   { right: -12%; }
+      .bottom { flex-direction: column; text-align: center; }
+    }
+    @media (max-width: 359px) {
+      .page { padding: 0 16px; }
+      .field { flex-direction: column; align-items: stretch; border-radius: 24px; }
+      .field input { padding: 12px 14px; text-align: center; }
+      .field button { justify-content: center; border-radius: 18px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; }
+      .door-left  { transform: rotateY(80deg);  filter: brightness(.74); }
+      .door-right { transform: rotateY(-80deg); filter: brightness(.74); }
+    }
+  
+  *, *::before, *::after { animation: none !important; }
+  .door-left  { transform: rotateY(80deg);  filter: brightness(.74); }
+  .door-right { transform: rotateY(-80deg); filter: brightness(.74); }
+  body::before { position: absolute; }
+
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  .og { position: relative; width: 1200px; height: 630px; display: grid;
+        grid-template-columns: 560px 1fr; align-items: center; padding-left: 80px; }
+  .og .brand svg { width: 44px; height: 44px; }
+  .og .brand span { font-size: 28px; }
+  .og .brand { display: flex; width: fit-content; }
+  .og .pill { display: flex; width: fit-content; margin-top: 40px; font-size: 14px; }
+  .og h1 { font-size: 62px; margin: 22px 0 18px; }
+  .og .sub { margin: 0; font-size: 22px; line-height: 1.5; color: var(--muted); }
+  .og .visual { --arch-w: 318px; align-self: end; justify-content: flex-start; padding: 0 0 52px 100px; }
+</style></head>
+<body><div class="og">
+  <div>
+    <div class="brand">
+      <svg viewBox="0 0 40 40"><path d="M8.5 35V18.5a11.5 11.5 0 0 1 23 0V35" fill="none" stroke="#1F3B2D" stroke-width="2.4"/><circle cx="20" cy="23" r="4.6" fill="#E3A33B"/><path d="M11 30.5c3.6-2.6 7.4-2.8 10.4-1.4 2.6 1.2 5 1.1 7.6-.5" fill="none" stroke="#1F3B2D" stroke-width="2" stroke-linecap="round"/><path d="M5 35h30" stroke="#1F3B2D" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <span>The Farm Door</span>
+    </div>
+    <p class="pill"><span class="dot"></span>Launching soon</p>
+    <h1>Something good is on its way to <em>your door.</em></h1>
+    <p class="sub">Indian spices &amp; pantry essentials,<br>delivered across India.</p>
+  </div>
+  <div class="visual"><div class="stage">
+          <div class="frame">
+            <div class="arch">
+              <svg class="scene" viewBox="0 0 380 520" preserveAspectRatio="xMidYMax slice">
+                <defs>
+                  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#E4AE58"/>
+                    <stop offset=".42" stop-color="#F2D398"/>
+                    <stop offset=".68" stop-color="#FAEBCB"/>
+                  </linearGradient>
+                  <radialGradient id="sunfill" cx=".5" cy=".42" r=".62">
+                    <stop offset="0" stop-color="#FCD681"/>
+                    <stop offset="1" stop-color="#EC9A2C"/>
+                  </radialGradient>
+                  <linearGradient id="road" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#EDCB96"/>
+                    <stop offset="1" stop-color="#D49C5E"/>
+                  </linearGradient>
+                </defs>
+
+                <rect width="380" height="520" fill="url(#sky)"/>
+
+                <g class="sun">
+                  <circle cx="190" cy="318" r="132" fill="#FFF7E2" opacity=".22"/>
+                  <circle cx="190" cy="318" r="102" fill="#FFF7E2" opacity=".3"/>
+                  <circle cx="190" cy="318" r="72" fill="url(#sunfill)"/>
+                </g>
+
+                <g fill="none" stroke="#6E4E31" stroke-width="1.6" stroke-linecap="round" opacity=".5">
+                  <path d="M92 176q6-6 12 0q6-6 12 0"/>
+                  <path d="M124 156q4-4 8 0q4-4 8 0"/>
+                  <path d="M262 196q4-4 8 0q4-4 8 0"/>
+                </g>
+
+                <!-- Far hills -->
+                <path d="M0 340C70 320 140 324 200 334S322 332 380 322V520H0Z" fill="#C6C894"/>
+                <g fill="#7E9660">
+                  <circle cx="52" cy="331" r="7"/><circle cx="66" cy="333" r="5.5"/>
+                  <circle cx="330" cy="321" r="6.5"/><circle cx="343" cy="323" r="5"/>
+                </g>
+                <path d="M0 364C88 342 170 350 250 364S346 370 380 356V520H0Z" fill="#97A96E"/>
+
+                <!-- Farmhouse -->
+                <g>
+                  <rect x="276" y="349" width="22" height="14" fill="#F3E4C6"/>
+                  <path d="M272 350 287 338 302 350Z" fill="#9E4A2C"/>
+                  <rect x="284.5" y="354" width="5" height="9" fill="#5B3A26"/>
+                  <rect x="279" y="353" width="3.5" height="3.5" fill="#C9973E"/>
+                </g>
+
+                <!-- Crop rows -->
+                <path d="M0 400C64 386 146 382 222 396S340 404 380 392V520H0Z" fill="#62814D"/>
+                <g fill="none" stroke="#4E6D3E" stroke-width="5" stroke-linecap="round" stroke-dasharray="0 13">
+                  <path d="M-6 414C80 398 220 402 386 412"/>
+                  <path d="M-6 428C80 413 220 417 386 427"/>
+                </g>
+
+                <!-- Near field -->
+                <path d="M0 442C80 426 170 428 250 442S352 450 380 444V520H0Z" fill="#2F4F36"/>
+                <g fill="none" stroke="#3E6446" stroke-width="2" stroke-linecap="round" opacity=".8">
+                  <path d="M-4 462C90 448 280 452 384 464"/>
+                  <path d="M-4 482C90 468 280 472 384 486"/>
+                  <path d="M-4 503C90 490 280 494 384 508"/>
+                </g>
+
+                <!-- The road home: from the farm to your door -->
+                <path d="M126 520C150 478 242 462 236 428C231 400 266 378 284 364L290 364C274 380 254 402 262 428C274 466 214 482 254 520Z" fill="url(#road)"/>
+
+                <!-- Chilli plants -->
+                <g transform="translate(58 488)">
+                  <path d="M0 0V-26M0-12l-9-7M0-18l8-6" stroke="#22402B" stroke-width="2" stroke-linecap="round"/>
+                  <ellipse cx="-10" cy="-21" rx="7" ry="3" fill="#6E9A56" transform="rotate(-30 -10 -21)"/>
+                  <ellipse cx="9" cy="-26" rx="7" ry="3" fill="#6E9A56" transform="rotate(25 9 -26)"/>
+                  <ellipse cx="2" cy="-30" rx="6" ry="2.6" fill="#7FA862" transform="rotate(-70 2 -30)"/>
+                  <path d="M-5-15q-1 7 2 10" stroke="#C8412E" stroke-width="3" stroke-linecap="round" fill="none"/>
+                  <path d="M5-19q2 7 0 10" stroke="#C8412E" stroke-width="3" stroke-linecap="round" fill="none"/>
+                </g>
+                <g transform="translate(330 494) scale(.85)">
+                  <path d="M0 0V-26M0-12l-9-7M0-18l8-6" stroke="#22402B" stroke-width="2" stroke-linecap="round"/>
+                  <ellipse cx="-10" cy="-21" rx="7" ry="3" fill="#6E9A56" transform="rotate(-30 -10 -21)"/>
+                  <ellipse cx="9" cy="-26" rx="7" ry="3" fill="#6E9A56" transform="rotate(25 9 -26)"/>
+                  <ellipse cx="2" cy="-30" rx="6" ry="2.6" fill="#7FA862" transform="rotate(-70 2 -30)"/>
+                  <path d="M-5-15q-1 7 2 10" stroke="#C8412E" stroke-width="3" stroke-linecap="round" fill="none"/>
+                </g>
+              </svg>
+
+              <div class="door door-left"><span class="handle"></span></div>
+              <div class="door door-right"><span class="handle"></span></div>
+            </div>
+          </div>
+
+          <!-- Star anise -->
+          <svg class="spice s-anise" viewBox="-50 -50 100 100">
+            <defs>
+              <g id="anise-petal">
+                <path d="M0-6C9-14 11-30 0-47C-11-30-9-14 0-6Z" fill="#8C4A26"/>
+                <path d="M-5.5-15C-7-25-4-36 0-44" stroke="#B06A3C" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+                <ellipse cx="0" cy="-27" rx="3.4" ry="6.4" fill="#E0AC6C" stroke="#5E2F17" stroke-width=".9"/>
+              </g>
+            </defs>
+            <use href="#anise-petal"/>
+            <use href="#anise-petal" transform="rotate(45)"/>
+            <use href="#anise-petal" transform="rotate(90)"/>
+            <use href="#anise-petal" transform="rotate(135)"/>
+            <use href="#anise-petal" transform="rotate(180)"/>
+            <use href="#anise-petal" transform="rotate(225)"/>
+            <use href="#anise-petal" transform="rotate(270)"/>
+            <use href="#anise-petal" transform="rotate(315)"/>
+            <circle r="7.5" fill="#6B3519"/>
+            <circle r="3" fill="#94532C"/>
+          </svg>
+
+          <!-- Cardamom -->
+          <svg class="spice s-cardamom" viewBox="0 0 84 52">
+            <g transform="rotate(14 42 26)">
+              <path d="M10 30C20 18 50 16 70 28C72 30 72 31 70 32C50 44 20 42 10 30Z" fill="#88A455"/>
+              <path d="M16 30C32 24 52 24 66 29M16 30C32 36 52 36 66 31" stroke="#66813A" stroke-width="1.3" fill="none"/>
+              <path d="M70 30h6" stroke="#66813A" stroke-width="2.2" stroke-linecap="round"/>
+            </g>
+            <g transform="rotate(-18 40 20)">
+              <path d="M6 18C16 6 46 4 66 16C68 18 68 19 66 20C46 32 16 30 6 18Z" fill="#9BB766"/>
+              <path d="M12 18C28 12 48 12 62 17M12 18C28 24 48 24 62 19" stroke="#6F8B40" stroke-width="1.3" fill="none"/>
+              <path d="M66 18h6" stroke="#6F8B40" stroke-width="2.2" stroke-linecap="round"/>
+            </g>
+          </svg>
+
+          <!-- Red chilli -->
+          <svg class="spice s-chilli" viewBox="0 0 160 64">
+            <path d="M30 22C60 10 110 12 152 52C150 54 147 55 144 54C110 36 70 38 34 44C24 44 20 26 30 22Z" fill="#C23B26"/>
+            <path d="M44 24C74 17 106 20 132 36" stroke="#E5684D" stroke-width="3" stroke-linecap="round" fill="none" opacity=".85"/>
+            <path d="M34 20C24 18 18 26 20 33C18 41 26 47 35 44C30 38 29 27 34 20Z" fill="#4E7A3A"/>
+            <path d="M21 32C12 31 7 25 6 16" stroke="#4E7A3A" stroke-width="4" stroke-linecap="round" fill="none"/>
+          </svg>
+
+          <!-- Bay leaf -->
+          <svg class="spice s-bay" viewBox="0 0 150 60">
+            <path d="M14 30C42 6 100 2 144 28C100 52 42 54 14 30Z" fill="#7F9C5B"/>
+            <path d="M18 30C58 27 100 26 140 28" stroke="#5C7A3C" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+            <path d="M46 29 58 17M66 28l12-13M86 27l12-11M46 30l12 11M66 29l12 13M86 28l12 12" stroke="#6C8A4A" stroke-width="1.2" stroke-linecap="round" opacity=".85"/>
+            <path d="M14 30H3" stroke="#5C7A3C" stroke-width="2.4" stroke-linecap="round"/>
+          </svg>
+
+          <!-- Cinnamon sticks -->
+          <svg class="spice s-cinnamon" viewBox="0 0 170 74">
+            <g transform="rotate(-7 85 30)">
+              <rect x="20" y="16" width="136" height="22" rx="11" fill="#A9603A"/>
+              <path d="M32 22H146" stroke="#8B4A2A" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M36 31H140" stroke="#C27D50" stroke-width="1.6" stroke-linecap="round"/>
+              <ellipse cx="22" cy="27" rx="7" ry="11" fill="#CB8A5C"/>
+              <path d="M22 19.5c4 .5 4.5 14.5 0 15-3.5-.5-3.5-11 0-11 2 .5 2 7 0 7" fill="none" stroke="#7A3F21" stroke-width="1.5" stroke-linecap="round"/>
+            </g>
+            <g transform="rotate(9 85 48)">
+              <rect x="14" y="38" width="140" height="21" rx="10.5" fill="#B66C42"/>
+              <path d="M26 44H144" stroke="#93512E" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M30 52H136" stroke="#CC8A5C" stroke-width="1.6" stroke-linecap="round"/>
+              <ellipse cx="16" cy="48.5" rx="6.6" ry="10.5" fill="#D39566"/>
+              <path d="M16 41.5c3.8.5 4.2 13.6 0 14-3.3-.5-3.3-10.3 0-10.3 1.9.5 1.9 6.5 0 6.5" fill="none" stroke="#7A3F21" stroke-width="1.5" stroke-linecap="round"/>
+            </g>
+          </svg>
+
+          <!-- Black peppercorns -->
+          <svg class="spice s-pepper" viewBox="0 0 70 54">
+            <g fill="#2E2520">
+              <circle cx="16" cy="32" r="8.5"/><circle cx="33" cy="22" r="8"/><circle cx="36" cy="40" r="7.5"/>
+              <circle cx="52" cy="29" r="8.5"/><circle cx="21" cy="12" r="6"/>
+            </g>
+            <g fill="#6E5C4D">
+              <circle cx="13" cy="29" r="2.4"/><circle cx="30" cy="19" r="2.2"/><circle cx="33.5" cy="37" r="2"/>
+              <circle cx="49" cy="26" r="2.4"/><circle cx="19" cy="10" r="1.8"/>
+            </g>
+          </svg>
+        </div></div>
+</div></body></html>

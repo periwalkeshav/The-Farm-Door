@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+/* The Farm Door design tokens (same palette as the coming-soon page). */
+@theme {
+  --color-ivory: #f7f2e8;
+  --color-paper: #fffdf8;
+  --color-sand: #efe6d6;
+  --color-forest: #1f3b2d;
+  --color-forest-deep: #16301f;
+  --color-forest-soft: #2b4e3a;
+  --color-ink: #27231f;
+  --color-muted: #6a6158;
+  --color-line: #ddd3c1;
+  --color-saffron: #e3a33b;
+  --color-saffron-deep: #a8641a;
+  --color-chilli: #b5412c;
+  --color-chilli-soft: #f6e1da;
+  --color-sage: #8fa77a;
+  --color-sage-soft: #e5ecdc;
+
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-sans: var(--font-manrope), system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --radius-card: 1.25rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    color-scheme: light;
+  }
+  body {
+    background: var(--color-ivory);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    color: var(--color-forest);
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-saffron);
+    outline-offset: 2px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* prevents zoom on iOS */
+  }
+}
+
+@layer components {
+  .field {
+    @apply w-full rounded-xl border border-line bg-paper px-3.5 py-2.5 text-ink placeholder:text-[#9a8f82] transition outline-none focus:border-forest focus:ring-4 focus:ring-saffron/25 disabled:opacity-60;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-semibold text-forest;
+  }
+  .card {
+    @apply rounded-[var(--radius-card)] border border-line bg-paper;
+  }
+  .prose-shop p {
+    @apply mb-3 leading-relaxed text-ink/90;
+  }
+  .prose-shop h2 {
+    @apply mt-8 mb-3 text-2xl;
+  }
+  .prose-shop ul {
+    @apply mb-3 list-disc space-y-1 pl-5;
+  }
+}
