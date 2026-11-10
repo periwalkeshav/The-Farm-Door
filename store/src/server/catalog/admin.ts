@@ -4,6 +4,7 @@
  */
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { ProductDetailsInput } from "@/lib/form-schemas";
 import type { Database, DbOrTx } from "@/db";
 import { collectionProducts, inventoryItems, orderItems, productImages, products, productVariants } from "@/db/schema";
 import { rupeesToPaise } from "@/lib/money";
@@ -37,27 +38,7 @@ export async function uniqueSlug(db: DbOrTx, base: string, excludeId?: number) {
   throw new CatalogError("Couldn't find a free web address for this product.");
 }
 
-export const productDetailsSchema = z.object({
-  name: z.string().trim().min(2, "Name is required.").max(120),
-  slug: z.string().trim().max(80).default(""),
-  subtitle: z.string().trim().max(160).default(""),
-  description: z.string().trim().max(5000).default(""),
-  categoryId: z.coerce.number().int().positive().nullable().catch(null),
-  status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]),
-  tags: z.string().default(""),
-  ingredients: z.string().trim().max(1000).default(""),
-  usageInstructions: z.string().trim().max(2000).default(""),
-  storageInstructions: z.string().trim().max(1000).default(""),
-  shelfLife: z.string().trim().max(200).default(""),
-  countryOfOrigin: z.string().trim().max(80).default("India"),
-  allergenInfo: z.string().trim().max(500).default(""),
-  nutritionInfo: z.string().trim().max(2000).default(""),
-  isFeatured: z.boolean().default(false),
-  seoTitle: z.string().trim().max(120).default(""),
-  seoDescription: z.string().trim().max(300).default(""),
-  collectionIds: z.array(z.coerce.number().int().positive()).default([]),
-});
-export type ProductDetailsInput = z.infer<typeof productDetailsSchema>;
+export { productDetailsSchema, type ProductDetailsInput } from "@/lib/form-schemas";
 
 export async function createProduct(db: Database, input: { name: string; categoryId: number | null }, staffUserId: number) {
   return db.transaction(async (tx) => {
@@ -96,11 +77,18 @@ export async function updateProductDetails(db: Database, productId: number, inpu
         storageInstructions: input.storageInstructions,
         shelfLife: input.shelfLife,
         countryOfOrigin: input.countryOfOrigin || "India",
+        netUnit: input.netUnit,
         allergenInfo: input.allergenInfo,
         nutritionInfo: input.nutritionInfo,
         isFeatured: input.isFeatured,
         seoTitle: input.seoTitle,
         seoDescription: input.seoDescription,
+        nameHi: input.nameHi,
+        subtitleHi: input.subtitleHi,
+        descriptionHi: input.descriptionHi,
+        ingredientsHi: input.ingredientsHi,
+        usageInstructionsHi: input.usageInstructionsHi,
+        storageInstructionsHi: input.storageInstructionsHi,
         publishedAt: input.status === "ACTIVE" && !current.publishedAt ? new Date() : current.publishedAt,
       })
       .where(eq(products.id, productId));
@@ -162,6 +150,7 @@ export async function saveVariants(db: Database, productId: number, payload: Var
     const mrp = rupeesToPaise(v.mrp);
     if (price === null || price <= 0) throw new CatalogError(`Enter a selling price for ${key.replaceAll("|", " · ")}.`);
     if (mrp === null || mrp < price) throw new CatalogError(`MRP must be at least the selling price for ${key.replaceAll("|", " · ")}.`);
+    if (v.shippingWeightGrams < v.netWeightGrams) throw new CatalogError(`Packed weight can't be less than the net weight for ${key.replaceAll("|", " · ")}.`);
   }
   const skus = variants.map((v) => v.sku.toUpperCase());
   if (new Set(skus).size !== skus.length) throw new CatalogError("Each variant needs a different SKU.");

@@ -5,15 +5,19 @@ import { refresh } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { carts, inventoryItems, productVariants } from "@/db/schema";
+import { carts, inventoryItems, orderItems, orders, productVariants } from "@/db/schema";
 import { cookieName, cookieOptions } from "@/data/cookies";
 import { clientIp } from "@/data/request";
 import { getCustomer } from "@/data/session";
 import { isValidPincode } from "@/lib/india";
-import { addToCart, CartError, cartCount, createCart, getCartRow, setCartQuantity } from "@/server/cart";
+import { addOrderItemsToCart, addToCart, CartError, cartCount, createCart, getCartRow, setCartQuantity } from "@/server/cart";
 import { checkCoupon } from "@/server/coupons";
 import { loadCartLines, toPricingLines } from "@/server/cart";
+import { checkOrderToken } from "@/server/orders/common";
+import { stockAlertSchema } from "@/lib/form-schemas";
+import { fieldErrorsFrom, type FieldErrors } from "@/lib/validation";
 import { hitRateLimit } from "@/server/rate-limit";
+import { StockAlertError, subscribeStockAlert } from "@/server/stock-alerts";
 import { readSettings } from "@/server/settings";
 import { parcelWeight, quoteShipping } from "@/server/shipping";
 
@@ -55,6 +59,31 @@ export async function addToCartAction(_prev: AddToCartState, formData: FormData)
     if (err instanceof CartError) return { ok: false, message: err.message };
     throw err;
   }
+}
+
+export type AddManyState = { ok: boolean; message: string; count?: number; added: number; failed: string[] };
+
+/** "Add all to cart" for a bundle: one of each pack. Items that can't be added are reported, the rest still go in. */
+export async function addManyToCartAction(variantIds: number[]): Promise<AddManyState> {
+  const ids = z.array(z.number().int().positive()).min(1).max(6).safeParse([...new Set(variantIds)]);
+  if (!ids.success) return { ok: false, message: "Choose at least one item.", added: 0, failed: [] };
+  const db = getDb();
+  if (!(await hitRateLimit(db, `cart:${await clientIp()}`, 120, 600)).allowed) return { ok: false, message: "Too many requests. Please wait a moment.", added: 0, failed: [] };
+  const cartId = await ensureCartId();
+  let added = 0;
+  const failed: string[] = [];
+  for (const id of ids.data) {
+    try {
+      await addToCart(db, cartId, id, 1);
+      added++;
+    } catch (err) {
+      if (!(err instanceof CartError)) throw err;
+      failed.push(err.message);
+    }
+  }
+  const count = await cartCount(db, cartId);
+  refresh();
+  return { ok: added > 0, message: added ? `${added} item${added === 1 ? "" : "s"} added to your cart` : (failed[0] ?? "Couldn't add those items."), count, added, failed };
 }
 
 export async function updateQuantityAction(variantId: number, quantity: number) {
@@ -127,4 +156,41 @@ export async function checkPincodeAction(pincode: string, variantId: number): Pr
   }
   if (quote.status === "ERROR") return { status: "ERROR", message: quote.message };
   return { status: "UNSERVICEABLE", message: "Sorry, we can't deliver to this pincode yet." };
+}
+
+export type BuyAgainResult = { ok: boolean; message: string; added: number; unavailable: string[] };
+
+/** "Buy again": puts a past order's items back in the cart. Allowed for the signed-in owner or with the order link's token. */
+export async function buyAgainAction(orderNumber: string, token: string): Promise<BuyAgainResult> {
+  const db = getDb();
+  if (!(await hitRateLimit(db, `buy-again:${await clientIp()}`, 30, 600)).allowed) return { ok: false, message: "Please wait a moment and try again.", added: 0, unavailable: [] };
+  const [order] = await db.select().from(orders).where(eq(orders.orderNumber, String(orderNumber).slice(0, 20)));
+  const customer = await getCustomer();
+  if (!order || !((customer && order.customerId === customer.id) || checkOrderToken(order, token))) return { ok: false, message: "Order not found.", added: 0, unavailable: [] };
+  const items = await db
+    .select({ variantId: orderItems.variantId, productName: orderItems.productName, variantTitle: orderItems.variantTitle, quantity: orderItems.quantity })
+    .from(orderItems)
+    .where(eq(orderItems.orderId, order.id));
+  const cartId = await ensureCartId();
+  const r = await addOrderItemsToCart(db, cartId, items);
+  refresh();
+  if (r.added === 0) return { ok: false, message: "Sorry, none of these items are available right now.", added: 0, unavailable: r.unavailable };
+  return { ok: true, message: r.limited ? "Added. Some quantities were reduced to what's in stock." : "Added to your cart.", added: r.added, unavailable: r.unavailable };
+}
+
+export type StockAlertState = { ok: boolean; message: string; fieldErrors?: FieldErrors } | null;
+
+/** "Email me when it's back" on a sold-out pack. */
+export async function stockAlertAction(_prev: StockAlertState, formData: FormData): Promise<StockAlertState> {
+  const parsed = stockAlertSchema.safeParse({ email: formData.get("email"), variantId: formData.get("variantId") });
+  if (!parsed.success) return { ok: false, message: "Please check your email address.", fieldErrors: fieldErrorsFrom(parsed.error) };
+  const db = getDb();
+  if (!(await hitRateLimit(db, `stock-alert:${await clientIp()}`, 10, 3600)).allowed) return { ok: false, message: "Please try again later." };
+  try {
+    await subscribeStockAlert(db, parsed.data.variantId, parsed.data.email);
+  } catch (err) {
+    if (err instanceof StockAlertError) return { ok: false, message: err.message };
+    throw err;
+  }
+  return { ok: true, message: "Done. We'll email you once when it's back in stock." };
 }

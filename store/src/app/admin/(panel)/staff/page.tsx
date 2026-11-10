@@ -4,6 +4,7 @@ import { NewStaffForm, StaffRowActions } from "@/components/admin/staff-forms";
 import { Badge, DataTable, PageHeader, Panel, Td } from "@/components/admin/ui";
 import { requireStaff } from "@/data/session";
 import { getDb } from "@/db";
+import { staffTwoStepRequired } from "@/lib/env";
 import { staffUsers } from "@/db/schema";
 import { ROLE_LABELS, ROLE_PERMISSIONS } from "@/server/permissions";
 
@@ -42,7 +43,7 @@ async function Staff() {
               {!s.isActive && <Badge tone="bad">deactivated</Badge>}
             </Td>
             <Td>{ROLE_LABELS[s.role]}</Td>
-            <Td>{s.totpEnabled ? <Badge tone="good">on</Badge> : <Badge tone="warn">set up at next sign-in</Badge>}</Td>
+            <Td>{s.totpEnabled ? <Badge tone="good">on</Badge> : <Badge tone="warn">{staffTwoStepRequired() ? "set up at next sign-in" : "not set up (switched off for now)"}</Badge>}</Td>
             <Td className="whitespace-nowrap text-muted">{s.lastLoginAt ? s.lastLoginAt.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "Never"}</Td>
             <Td>
               <StaffRowActions staffId={s.id} role={s.role} isActive={s.isActive} isSelf={s.id === me.id} />

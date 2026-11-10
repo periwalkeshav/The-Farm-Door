@@ -22,7 +22,7 @@ async function CatalogContent() {
   const [cats, cols] = await Promise.all([db.select().from(categories).orderBy(asc(categories.sortOrder)), db.select().from(collections).orderBy(asc(collections.sortOrder))]);
   return (
     <>
-      <PageHeader title="Categories & collections" description="Categories organise the shop menu (each product has one). Collections are curated groups like Bestsellers; a product can be in several. Add products to collections from the product page." />
+      <PageHeader title="Categories & collections" description="Categories organise the shop menu (each product has one); a category shows to shoppers once it has a product on sale. Collections are curated groups like Bestsellers; a product can be in several. A collection set to “Filter inside” a category becomes a filter button on that category's page (e.g. Whole spices inside Spices). Add products to collections from the product page." />
       <div className="space-y-6">
         <Panel title="Categories">
           <div className="space-y-2">
@@ -36,10 +36,10 @@ async function CatalogContent() {
         <Panel title="Collections">
           <div className="space-y-2">
             {cols.map((c) => (
-              <GroupForm key={c.id} kind="collection" group={c} />
+              <GroupForm key={c.id} kind="collection" group={c} categories={cats} />
             ))}
             <p className="pt-2 text-sm font-semibold text-forest">Add a collection</p>
-            <GroupForm kind="collection" />
+            <GroupForm kind="collection" categories={cats} />
           </div>
         </Panel>
       </div>

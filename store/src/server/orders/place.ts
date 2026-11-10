@@ -24,6 +24,8 @@ import { aggregateNeeds, OutOfStockError, reserveStock } from "../inventory";
 import { paymentGateway } from "../payments";
 import { readSettings } from "../settings";
 import { upsertCustomerByEmail } from "../auth/customer";
+import { PointsChangedError, redeemPoints } from "../loyalty";
+import { notifyWhatsApp } from "../whatsapp";
 import { addOrderEvent, codConfirmToken, emailOrder, orderAccessToken, orderUrl, type OrderRow } from "./common";
 
 export type PlaceOrderInput = {
@@ -47,6 +49,10 @@ export type PlaceOrderInput = {
   marketingOptIn: boolean;
   saveAddress: boolean;
   note: string;
+  /** The customer asked for WhatsApp order updates. */
+  whatsappOptIn?: boolean;
+  /** Use loyalty points (signed-in customers only). */
+  usePoints?: boolean;
 };
 
 export type PaymentStart = { provider: "razorpay" | "mock"; keyId: string; razorpayOrderId: string; amountPaise: number } | null;
@@ -67,6 +73,8 @@ export async function placeOrder(db: Database, input: PlaceOrderInput): Promise<
     pincode: input.pincode,
     paymentMethod: input.paymentMethod,
     email,
+    customerId: input.signedInCustomerId,
+    usePoints: !!input.usePoints && !!input.signedInCustomerId,
   });
 
   if (summary.lines.length === 0) return { ok: false, code: "EMPTY", message: "Your cart is empty." };
@@ -129,6 +137,8 @@ export async function placeOrder(db: Database, input: PlaceOrderInput): Promise<
           codFeePaise: b.codFeePaise,
           totalPaise: b.totalPaise!,
           taxPaise: b.taxPaise!,
+          pointsRedeemed: summary.points.applied ? summary.points.usable : 0,
+          pointsDiscountPaise: b.pointsDiscountPaise,
           couponId: summary.coupon?.ok ? summary.coupon.coupon.id : null,
           couponCode: summary.coupon?.ok ? summary.coupon.coupon.code : null,
           shippingQuote: {
@@ -145,6 +155,7 @@ export async function placeOrder(db: Database, input: PlaceOrderInput): Promise<
           reservationExpiresAt: new Date(now.getTime() + (isCod ? settings.cod.confirmationHours * 3600_000 : settings.checkout.reservationMinutes * 60_000)),
           customerNote: input.note,
           marketingOptIn: input.marketingOptIn,
+          whatsappOptIn: !!input.whatsappOptIn,
         })
         .returning();
 
@@ -190,8 +201,9 @@ export async function placeOrder(db: Database, input: PlaceOrderInput): Promise<
 
       if (summary.coupon?.ok) {
         if (!(await claimCouponUse(tx, summary.coupon.coupon.id))) throw new CouponUsedUp();
-        await tx.insert(couponRedemptions).values({ couponId: summary.coupon.coupon.id, orderId: created.id, email, discountPaise: b.discountPaise });
+        await tx.insert(couponRedemptions).values({ couponId: summary.coupon.coupon.id, orderId: created.id, email, discountPaise: b.couponDiscountPaise });
       }
+      if (summary.points.applied) await redeemPoints(tx, input.signedInCustomerId!, created.id, summary.points.usable);
 
       if (input.saveAddress && input.signedInCustomerId) {
         const [dupe] = await tx
@@ -229,16 +241,21 @@ export async function placeOrder(db: Database, input: PlaceOrderInput): Promise<
     });
   } catch (err) {
     if (err instanceof OutOfStockError) {
-      const fresh = await summarizeCart(db, { cartId: input.cartId, couponCode: input.couponCode, pincode: input.pincode, paymentMethod: input.paymentMethod, email });
+      const fresh = await summarizeCart(db, { cartId: input.cartId, couponCode: input.couponCode, pincode: input.pincode, paymentMethod: input.paymentMethod, email, customerId: input.signedInCustomerId, usePoints: input.usePoints });
       return { ok: false, code: "OUT_OF_STOCK", message: "Someone just bought the last of an item in your cart. Please review your cart.", summary: fresh };
     }
     if (err instanceof CouponUsedUp) return { ok: false, code: "COUPON", message: "That code has just been fully used." };
+    if (err instanceof PointsChangedError) {
+      const fresh = await summarizeCart(db, { cartId: input.cartId, couponCode: input.couponCode, pincode: input.pincode, paymentMethod: input.paymentMethod, email, customerId: input.signedInCustomerId, usePoints: input.usePoints });
+      return { ok: false, code: "PRICE_CHANGED", message: err.message, summary: fresh };
+    }
     throw err;
   }
 
   if (isCod) {
     const rendered = codConfirmEmail(await emailOrder(db, order), `${orderUrl(order)}&confirm=${codConfirmToken(order)}`, settings.cod.confirmationHours);
     await sendEmail(db, { to: order.email, ...rendered, template: "cod-confirm", orderId: order.id });
+    await notifyWhatsApp(db, order, "cod_confirm", { link: `${orderUrl(order)}&confirm=${codConfirmToken(order)}` });
   }
 
   return { ok: true, order, accessToken: orderAccessToken(order), payment: await startPayment(db, order), existing: false };

@@ -72,6 +72,7 @@ export async function buildInvoiceSnapshot(tx: DbOrTx, order: OrderRow): Promise
       state: store.state,
       stateCode: stateCode(store.state) ?? "",
       fssaiNumber: store.fssaiNumber,
+      cin: store.cin,
     },
     buyer: {
       name: order.shipName,

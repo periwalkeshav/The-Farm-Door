@@ -22,7 +22,7 @@ async function Emails({ searchParams }: { searchParams: PageProps<"/admin/emails
   const sp = await searchParams;
   const to = typeof sp.to === "string" ? sp.to.trim().slice(0, 100) : "";
   const rows = await getDb()
-    .select({ id: emailLog.id, to: emailLog.to, subject: emailLog.subject, template: emailLog.template, status: emailLog.status, error: emailLog.error, orderId: emailLog.orderId, createdAt: emailLog.createdAt })
+    .select({ id: emailLog.id, to: emailLog.to, subject: emailLog.subject, template: emailLog.template, status: emailLog.status, error: emailLog.error, attachments: emailLog.attachments, orderId: emailLog.orderId, createdAt: emailLog.createdAt })
     .from(emailLog)
     .where(to ? ilike(emailLog.to, `%${to.replace(/[%_\\]/g, (m) => `\\${m}`)}%`) : undefined)
     .orderBy(desc(emailLog.createdAt))
@@ -54,10 +54,11 @@ async function Emails({ searchParams }: { searchParams: PageProps<"/admin/emails
                 e.subject
               )}
               {e.orderId && (
-                <Link href={`/admin/orders/${e.orderId}`} className="ml-2 text-xs text-muted underline">
+                <Link href={`/admin/orders/${e.orderId}`} className="ml-2 inline-block py-1 text-xs text-muted underline">
                   order
                 </Link>
               )}
+              {e.attachments.length > 0 && <span className="block text-xs text-muted">Attached: {e.attachments.join(", ")}</span>}
               {e.error && <span className="block text-xs text-chilli">{e.error}</span>}
             </Td>
             <Td>

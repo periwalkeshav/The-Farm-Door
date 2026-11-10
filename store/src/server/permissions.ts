@@ -17,6 +17,7 @@ export type Permission =
   | "customers.view"
   | "coupons.manage"
   | "reviews.manage"
+  | "enquiries.manage" // bulk / business order enquiries
   | "reports.operations" // order counts, stock, delivery performance
   | "reports.finance" // sales, payments, refunds, GST
   | "exports"
@@ -37,6 +38,7 @@ const ALL: Permission[] = [
   "customers.view",
   "coupons.manage",
   "reviews.manage",
+  "enquiries.manage",
   "reports.operations",
   "reports.finance",
   "exports",
@@ -59,6 +61,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, readonly Permission[]> = {
     "customers.view",
     "coupons.manage",
     "reviews.manage",
+    "enquiries.manage",
     "reports.operations",
   ],
   PACKER: ["orders.view", "orders.pack", "inventory.view"],

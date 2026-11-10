@@ -119,7 +119,7 @@ export async function adjustStock(
   tx: DbOrTx,
   itemId: number,
   delta: number,
-  m: { reason: "RESTOCK" | "ADJUSTMENT"; staffUserId: number; note: string },
+  m: { reason: "RESTOCK" | "ADJUSTMENT" | "ASSEMBLY"; staffUserId: number; note: string },
 ) {
   if (!Number.isInteger(delta) || delta === 0) throw new Error("Enter a whole number other than zero.");
   const [after] = await tx

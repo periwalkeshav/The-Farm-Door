@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { OrderActionPanel } from "@/components/admin/order-actions";
 import { Badge, Panel, statusTone } from "@/components/admin/ui";
+import { Notice } from "@/components/ui";
 import { requireStaff } from "@/data/session";
 import { getDb } from "@/db";
 import { emailLog, orders, payments, staffUsers } from "@/db/schema";
@@ -13,6 +14,7 @@ import { formatAddress, PAYMENT_STATUS_LABELS, STATUS_LABELS } from "@/server/or
 import { refundableAmount } from "@/server/orders/lifecycle";
 import { loadOrderDetail } from "@/server/orders/view";
 import { can } from "@/server/permissions";
+import { PROBLEM_KIND_LABELS, PROBLEM_STATUS_LABELS, reportsForOrder } from "@/server/problems";
 
 export const metadata = { title: "Order" };
 
@@ -25,7 +27,16 @@ export default function AdminOrderPage({ params }: PageProps<"/admin/orders/[id]
 }
 
 function when(d: Date | null) {
-  return d ? d.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "—";
+  return d
+    ? d.toLocaleString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: "Asia/Kolkata",
+      })
+    : "—";
 }
 
 async function OrderDetail({ params }: { params: PageProps<"/admin/orders/[id]">["params"] }) {
@@ -39,10 +50,23 @@ async function OrderDetail({ params }: { params: PageProps<"/admin/orders/[id]">
   const seeCustomer = can(staff.role, "orders.customerDetails");
   const seeMoney = can(staff.role, "orders.manage") || can(staff.role, "reports.finance") || can(staff.role, "orders.refund");
   const paymentRows = seeMoney ? await db.select().from(payments).where(eq(payments.orderId, order.id)).orderBy(asc(payments.createdAt)) : [];
-  const emails = seeCustomer ? await db.select({ id: emailLog.id, subject: emailLog.subject, status: emailLog.status, createdAt: emailLog.createdAt }).from(emailLog).where(eq(emailLog.orderId, order.id)).orderBy(desc(emailLog.createdAt)) : [];
+  const emails = seeCustomer
+    ? await db
+        .select({
+          id: emailLog.id,
+          subject: emailLog.subject,
+          status: emailLog.status,
+          createdAt: emailLog.createdAt,
+        })
+        .from(emailLog)
+        .where(eq(emailLog.orderId, order.id))
+        .orderBy(desc(emailLog.createdAt))
+    : [];
   const staffNames = new Map((await db.select({ id: staffUsers.id, name: staffUsers.name }).from(staffUsers)).map((s) => [`staff:${s.id}`, s.name]));
   const refundable = can(staff.role, "orders.refund") ? await refundableAmount(db, order) : 0;
   const shipment = detail.shipment;
+  const [original] = order.replacementForOrderId ? await db.select({ id: orders.id, orderNumber: orders.orderNumber }).from(orders).where(eq(orders.id, order.replacementForOrderId)) : [];
+  const reports = await reportsForOrder(db, order.id);
 
   return (
     <>
@@ -74,6 +98,25 @@ async function OrderDetail({ params }: { params: PageProps<"/admin/orders/[id]">
           )}
         </div>
       </div>
+
+      {original && (
+        <Notice tone="info" className="mb-6">
+          Free replacement for{" "}
+          <Link href={`/admin/orders/${original.id}`} className="font-semibold underline">
+            order {original.orderNumber}
+          </Link>
+          . No charge and no tax invoice; the courier is given the original order&apos;s invoice number.
+        </Notice>
+      )}
+      {reports.length > 0 && (
+        <Notice tone={reports.some((r) => r.status === "OPEN") ? "warn" : "info"} className="mb-6">
+          The customer reported a problem with this order ({reports.map((r) => `${PROBLEM_KIND_LABELS[r.kind].toLowerCase()}: ${PROBLEM_STATUS_LABELS[r.status].toLowerCase()}`).join("; ")}
+          ).{" "}
+          <Link href={`/admin/problems?status=${reports[0].status}`} className="font-semibold underline">
+            Open problem reports
+          </Link>
+        </Notice>
+      )}
 
       <Panel title="Actions" className="mb-6">
         <OrderActionPanel
@@ -118,27 +161,29 @@ async function OrderDetail({ params }: { params: PageProps<"/admin/orders/[id]">
               </tbody>
             </table>
             {seeMoney && (
-              <dl className="mt-4 space-y-1 border-t border-line pt-3 text-sm">
-                {[
-                  ["Items", order.subtotalPaise],
-                  ...(order.discountPaise ? [[`Discount ${order.couponCode ?? ""}`, -order.discountPaise]] : []),
-                  ["Shipping charged", order.shippingPaise],
-                  ...(order.codFeePaise ? [["COD fee", order.codFeePaise]] : []),
-                ].map(([l, v]) => (
-                  <div key={l as string} className="flex justify-between">
-                    <dt className="text-muted">{l}</dt>
-                    <dd>{(v as number) < 0 ? `−${formatINR(-(v as number))}` : formatINR(v as number)}</dd>
+              <>
+                <dl className="mt-4 space-y-1 border-t border-line pt-3 text-sm">
+                  {[
+                    ["Items", order.subtotalPaise],
+                    ...(order.discountPaise ? [[`Discount ${order.couponCode ?? ""}`, -order.discountPaise]] : []),
+                    ["Shipping charged", order.shippingPaise],
+                    ...(order.codFeePaise ? [["COD fee", order.codFeePaise]] : []),
+                  ].map(([l, v]) => (
+                    <div key={l as string} className="flex justify-between">
+                      <dt className="text-muted">{l}</dt>
+                      <dd>{(v as number) < 0 ? `−${formatINR(-(v as number))}` : formatINR(v as number)}</dd>
+                    </div>
+                  ))}
+                  <div className="flex justify-between font-bold">
+                    <dt>Total</dt>
+                    <dd>{formatINR(order.totalPaise)}</dd>
                   </div>
-                ))}
-                <div className="flex justify-between font-bold">
-                  <dt>Total</dt>
-                  <dd>{formatINR(order.totalPaise)}</dd>
-                </div>
-                <p className="text-xs text-muted">
+                </dl>
+                <p className="mt-1 text-xs text-muted">
                   Includes {formatINR(order.taxPaise)} GST · Parcel {(order.totalWeightGrams / 1000).toFixed(2)} kg
                   {order.shippingQuote ? ` · Courier quote ${formatINR(order.shippingQuote.quotedCostPaise)} (${order.shippingQuote.courierName})` : ""}
                 </p>
-              </dl>
+              </>
             )}
             {order.customerNote && <p className="mt-3 rounded-lg bg-sand/60 p-3 text-sm">Customer note: {order.customerNote}</p>}
           </Panel>

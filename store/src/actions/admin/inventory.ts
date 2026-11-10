@@ -3,15 +3,15 @@
 import { eq } from "drizzle-orm";
 import { refresh, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { getDb } from "@/db";
 import { inventoryItems } from "@/db/schema";
 import { requireStaffAction } from "@/data/session";
-import { rupeesToPaise } from "@/lib/money";
+import { adjustStockSchema, newPoolSchema, poolSettingsSchema } from "@/lib/form-schemas";
+import { fieldErrorsFrom, type FieldErrors } from "@/lib/validation";
 import { logAudit } from "@/server/audit";
 import { adjustStock } from "@/server/inventory";
 
-export type InventoryResult = { ok: boolean; message: string } | null;
+export type InventoryResult = { ok: boolean; message: string; fieldErrors?: FieldErrors } | null;
 
 /** Quantity typed in admin → pool units (grams for loose stock, packs otherwise). */
 function toUnits(qty: string, unit: "PACK" | "GRAM", scale: string): number | null {
@@ -23,23 +23,10 @@ function toUnits(qty: string, unit: "PACK" | "GRAM", scale: string): number | nu
 
 export async function createPoolAction(_prev: InventoryResult, formData: FormData): Promise<InventoryResult> {
   const staff = await requireStaffAction("inventory.manage");
-  const parsed = z
-    .object({
-      name: z.string().trim().min(2, "Name the stock pool, e.g. “Cumin powder, loose”.").max(120),
-      sku: z
-        .string()
-        .trim()
-        .toUpperCase()
-        .regex(/^[A-Z0-9._-]{2,40}$/, "Use 2–40 letters, numbers, dot, dash or underscore for the code."),
-      openingKg: z.coerce.number().min(0).max(100_000),
-      thresholdKg: z.coerce.number().min(0).max(100_000),
-      costPerKg: z.string().default(""),
-    })
-    .safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
-  const d = parsed.data;
-  const cost = d.costPerKg.trim() ? rupeesToPaise(d.costPerKg) : null;
-  if (d.costPerKg.trim() && cost === null) return { ok: false, message: "Enter the cost per kg in rupees." };
+  const parsed = newPoolSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, message: "Please fix the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
+  const d = { ...parsed.data, openingKg: parsed.data.openingKg ?? 0, thresholdKg: parsed.data.thresholdKg ?? 0 };
+  const cost = d.costPerKg;
   const db = getDb();
   let id: number;
   try {
@@ -54,7 +41,7 @@ export async function createPoolAction(_prev: InventoryResult, formData: FormDat
       return pool.id;
     });
   } catch (err) {
-    if (err instanceof Error && /unique/i.test(err.message)) return { ok: false, message: "That code is already used by another stock pool." };
+    if (err instanceof Error && /unique/i.test(err.message)) return { ok: false, message: "That code is already used by another stock pool.", fieldErrors: { sku: "That code is already used by another stock pool." } };
     throw err;
   }
   redirect(`/admin/inventory/${id}`);
@@ -65,13 +52,11 @@ export async function updatePoolAction(poolId: number, _prev: InventoryResult, f
   const db = getDb();
   const [pool] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, poolId));
   if (!pool) return { ok: false, message: "Stock pool not found." };
-  const name = String(formData.get("name") ?? "").trim().slice(0, 120);
-  const threshold = toUnits(String(formData.get("threshold") ?? "0"), pool.unit, String(formData.get("thresholdScale") ?? "g"));
-  const costText = String(formData.get("cost") ?? "").trim();
-  const cost = costText ? rupeesToPaise(costText) : null;
-  if (name.length < 2) return { ok: false, message: "Enter a name." };
-  if (threshold === null || threshold < 0) return { ok: false, message: "Enter a whole-number alert level." };
-  if (costText && cost === null) return { ok: false, message: "Enter the cost in rupees." };
+  const parsed = poolSettingsSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, message: "Please fix the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
+  const { name, cost } = parsed.data;
+  const threshold = toUnits(String(parsed.data.threshold ?? 0), pool.unit, String(formData.get("thresholdScale") ?? "g"));
+  if (threshold === null) return { ok: false, message: "Please fix the highlighted fields.", fieldErrors: { threshold: pool.unit === "PACK" ? "Enter a whole number of packs." : "Use at most 3 decimal places (grams)." } };
   await db
     .update(inventoryItems)
     .set({ name, lowStockThreshold: threshold, unitCostPaise: cost, isActive: formData.get("isActive") === "on" })
@@ -87,12 +72,12 @@ export async function adjustStockAction(poolId: number, _prev: InventoryResult, 
   const db = getDb();
   const [pool] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, poolId));
   if (!pool) return { ok: false, message: "Stock pool not found." };
-  const kind = formData.get("kind") === "ADJUSTMENT" ? "ADJUSTMENT" : "RESTOCK";
+  const parsed = adjustStockSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, message: "Please fix the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
+  const { kind, note } = parsed.data;
   const direction = formData.get("direction") === "remove" ? -1 : 1;
-  const units = toUnits(String(formData.get("quantity") ?? ""), pool.unit, String(formData.get("scale") ?? "g"));
-  const note = String(formData.get("note") ?? "").trim().slice(0, 300);
-  if (units === null || units <= 0) return { ok: false, message: "Enter a quantity greater than zero." };
-  if (kind === "ADJUSTMENT" && !note) return { ok: false, message: "Say why you're adjusting stock (e.g. damaged, count correction)." };
+  const units = toUnits(String(parsed.data.quantity), pool.unit, String(formData.get("scale") ?? "g"));
+  if (units === null || units <= 0) return { ok: false, message: "Please fix the highlighted fields.", fieldErrors: { quantity: pool.unit === "PACK" ? "Enter a whole number of packs." : "Enter a quantity greater than zero." } };
   const delta = kind === "RESTOCK" ? units : direction * units;
   try {
     await db.transaction(async (tx) => {

@@ -56,12 +56,18 @@ export function totpAt(secret: string, timeMs: number, step = 30, digits = 6): s
 
 /** Accepts the current code and one step either side to allow for clock drift. */
 export function verifyTotp(secret: string, code: string, timeMs = Date.now()): boolean {
+  return totpStep(secret, code, timeMs) !== null;
+}
+
+/** The 30-second step a valid code belongs to (for refusing a code that was already used), or null. */
+export function totpStep(secret: string, code: string, timeMs = Date.now()): number | null {
   const clean = code.replace(/\s/g, "");
-  if (!/^\d{6}$/.test(clean)) return false;
+  if (!/^\d{6}$/.test(clean)) return null;
   for (const drift of [-1, 0, 1]) {
-    if (totpAt(secret, timeMs + drift * 30_000) === clean) return true;
+    const t = timeMs + drift * 30_000;
+    if (totpAt(secret, t) === clean) return Math.floor(t / 30_000);
   }
-  return false;
+  return null;
 }
 
 export function otpauthUrl(secret: string, account: string, issuer = "The Farm Door Admin"): string {

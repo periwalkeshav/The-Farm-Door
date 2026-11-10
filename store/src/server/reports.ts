@@ -85,7 +85,7 @@ export async function salesSummary(db: DbOrTx, r: Range): Promise<SalesSummary> 
           coalesce(sum(tax_paise),0) as gst,
           coalesce(sum(total_paise),0) as total,
           count(distinct customer_id) as customers
-        from orders where confirmed_at >= ${r.from} and confirmed_at < ${r.to}`,
+        from orders where confirmed_at >= ${r.from} and confirmed_at < ${r.to} and replacement_for_order_id is null`,
   );
   const ratio = await one<{ taxable: unknown; total: unknown }>(
     db,
@@ -112,9 +112,9 @@ export async function salesSummary(db: DbOrTx, r: Range): Promise<SalesSummary> 
   const cust = await one<{ new_customers: unknown; returning_customers: unknown }>(
     db,
     sql`with period as (
-          select distinct customer_id from orders where confirmed_at >= ${r.from} and confirmed_at < ${r.to} and customer_id is not null
+          select distinct customer_id from orders where confirmed_at >= ${r.from} and confirmed_at < ${r.to} and customer_id is not null and replacement_for_order_id is null
         ), first_orders as (
-          select customer_id, min(confirmed_at) as first_at from orders where confirmed_at is not null and customer_id in (select customer_id from period) group by customer_id
+          select customer_id, min(confirmed_at) as first_at from orders where confirmed_at is not null and replacement_for_order_id is null and customer_id in (select customer_id from period) group by customer_id
         )
         select count(*) filter (where first_at >= ${r.from}) as new_customers,
                count(*) filter (where first_at < ${r.from}) as returning_customers
@@ -157,7 +157,7 @@ export async function salesSeries(db: DbOrTx, r: Range, unit: "day" | "week" | "
                                  ('1 ' || ${unit})::interval) as bucket
         ), s as (
           select date_trunc(${unit}, confirmed_at at time zone 'Asia/Kolkata') as bucket, count(*) as orders, sum(subtotal_paise - discount_paise) as net
-          from orders where confirmed_at >= ${r.from} and confirmed_at < ${r.to}
+          from orders where confirmed_at >= ${r.from} and confirmed_at < ${r.to} and replacement_for_order_id is null
           group by 1
         )
         select to_char(b.bucket, 'YYYY-MM-DD') as bucket, coalesce(s.orders,0) as orders, coalesce(s.net,0) as net
@@ -293,13 +293,15 @@ export async function lowStock(db: DbOrTx) {
 }
 
 export async function workQueue(db: DbOrTx) {
-  return one<{ to_pack: number; awaiting_cod: number; awaiting_payment: number; delivery_failed: number; pending_reviews: number }>(
+  return one<{ to_pack: number; awaiting_cod: number; awaiting_payment: number; delivery_failed: number; pending_reviews: number; new_enquiries: number; open_problems: number }>(
     db,
     sql`select (select count(*) from orders where status = 'CONFIRMED')::int as to_pack,
                (select count(*) from orders where status = 'AWAITING_COD_CONFIRMATION')::int as awaiting_cod,
                (select count(*) from orders where status = 'AWAITING_PAYMENT')::int as awaiting_payment,
                (select count(*) from orders where status = 'DELIVERY_FAILED')::int as delivery_failed,
-               (select count(*) from reviews where status = 'PENDING')::int as pending_reviews`,
+               (select count(*) from reviews where status = 'PENDING')::int as pending_reviews,
+               (select count(*) from enquiries where status = 'NEW')::int as new_enquiries,
+               (select count(*) from problem_reports where status = 'OPEN')::int as open_problems`,
   );
 }
 

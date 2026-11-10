@@ -3,7 +3,7 @@
  * Each image is labelled "Sample image" and must be replaced with real photos.
  */
 
-export type ArtKind = "powder" | "seeds" | "pepper" | "cardamom" | "cinnamon" | "anise" | "bay" | "chilli" | "masala";
+export type ArtKind = "powder" | "seeds" | "pepper" | "cardamom" | "cinnamon" | "anise" | "bay" | "chilli" | "masala" | "dal" | "rice" | "nuts" | "bottle" | "jar";
 
 const anise = (x: number, y: number, s: number, r = 0) => `
 <g transform="translate(${x} ${y}) rotate(${r}) scale(${s})">
@@ -51,6 +51,40 @@ const peppercorn = (x: number, y: number, s: number) =>
 const seed = (x: number, y: number, r: number, color: string) =>
   `<g transform="translate(${x} ${y}) rotate(${r})"><ellipse rx="11" ry="4.2" fill="${color}"/><path d="M-8 0H8" stroke="#00000033" stroke-width="1.2"/></g>`;
 
+const lentil = (x: number, y: number, color: string) => `<g transform="translate(${x} ${y})"><circle r="9" fill="${color}"/><circle cx="-2.5" cy="-2.5" r="2.4" fill="#FFFFFF44"/></g>`;
+
+const grain = (x: number, y: number, r: number) =>
+  `<g transform="translate(${x} ${y}) rotate(${r})"><ellipse rx="15" ry="3.6" fill="#FBF7EC" stroke="#D9CDB4" stroke-width="1"/></g>`;
+
+const almond = (x: number, y: number, r: number) =>
+  `<g transform="translate(${x} ${y}) rotate(${r}) scale(1.6)"><path d="M0-16C9-10 10 8 0 16C-10 8-9-10 0-16Z" fill="#B0683A"/><path d="M-2-10C-5-2-4 6-1 11" stroke="#8C4A26" stroke-width="1.4" fill="none"/></g>`;
+
+const cashew = (x: number, y: number, r: number) =>
+  `<g transform="translate(${x} ${y}) rotate(${r}) scale(1.7)"><path d="M-10 8c-2-14 8-26 20-24 4 1 4 6 0 7-7 1-11 8-10 16 0 4-9 6-10 1Z" fill="#EBD3A2" stroke="#D4B77F" stroke-width="1"/></g>`;
+
+/** An oil bottle standing where the bowl usually is. */
+function bottle(color: string) {
+  return `
+  <rect x="560" y="190" width="80" height="60" rx="12" fill="#1F3B2D"/>
+  <path d="M570 250h60v90c0 30 110 60 110 150v330c0 40-30 70-70 70H530c-40 0-70-30-70-70V490c0-90 110-120 110-150Z" fill="${color}" opacity=".95"/>
+  <path d="M470 520h260v260H470Z" fill="#00000018"/>
+  <rect x="500" y="560" width="200" height="170" rx="16" fill="#F7F2E8"/>
+  <path d="M540 610h120M540 650h90" stroke="#1F3B2D" stroke-width="12" stroke-linecap="round"/>
+  <path d="M500 480c0-40 30-70 50-90" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" opacity=".45"/>`;
+}
+
+/** A honey jar with a wooden dipper. */
+function jar(color: string) {
+  return `
+  <rect x="400" y="330" width="400" height="80" rx="24" fill="#8C4A26"/>
+  <path d="M420 410h360c30 0 50 20 50 50v390c0 50-40 80-90 80H460c-50 0-90-30-90-80V460c0-30 20-50 50-50Z" fill="${color}"/>
+  <path d="M370 560c80 40 160-30 230 15s160 25 230-15v70H370Z" fill="#00000022"/>
+  <rect x="470" y="640" width="260" height="160" rx="18" fill="#F7F2E8"/>
+  <path d="M510 690h180M510 740h120" stroke="#8C4A26" stroke-width="14" stroke-linecap="round"/>
+  <path d="M800 240 880 420" stroke="#A9603A" stroke-width="26" stroke-linecap="round"/>
+  <ellipse cx="895" cy="455" rx="42" ry="56" fill="#A9603A" transform="rotate(-25 895 455)"/>`;
+}
+
 /** Deterministic pseudo-random numbers so images are stable between runs. */
 function rng(seedValue: number) {
   let s = seedValue;
@@ -66,7 +100,10 @@ export function productArt(opts: { kind: ArtKind; powder?: string; bg: string; s
   let inside = "";
   let around = "";
 
-  if (opts.kind === "powder" || opts.kind === "masala") {
+  const standing = opts.kind === "bottle" || opts.kind === "jar";
+  if (standing) {
+    inside = opts.kind === "jar" ? jar(powder) : bottle(powder);
+  } else if (opts.kind === "powder" || opts.kind === "masala") {
     inside = `
       <ellipse cx="600" cy="610" rx="318" ry="96" fill="${powder}"/>
       <path d="M300 612C380 470 820 470 900 612C760 660 440 660 300 612Z" fill="${powder}"/>
@@ -90,6 +127,9 @@ export function productArt(opts: { kind: ArtKind; powder?: string; bg: string; s
       if (opts.kind === "cinnamon" && i < 12) items.push(cinnamon(x - 90, y - 20, 1.4, (rand() - 0.5) * 50));
       if (opts.kind === "bay" && i < 18) items.push(bay(x - 80, y - 30, 1.35, r));
       if (opts.kind === "chilli" && i < 16) items.push(chilli(x - 80, y - 30, 1.35, r));
+      if (opts.kind === "dal") items.push(lentil(x, y, powder), lentil(x + 14, y + 6, powder));
+      if (opts.kind === "rice") items.push(grain(x, y, r), grain(x + 12, y + 5, r + 40));
+      if (opts.kind === "nuts" && i < 30) items.push(opts.powder === "cashew" ? cashew(x, y - 10, r) : almond(x, y - 10, r));
     }
     inside = `<ellipse cx="600" cy="610" rx="318" ry="96" fill="#00000014"/>${items.join("")}`;
   }
@@ -103,9 +143,13 @@ export function productArt(opts: { kind: ArtKind; powder?: string; bg: string; s
   </defs>
   <rect width="1200" height="1200" fill="url(#bg)"/>
   <ellipse cx="600" cy="1000" rx="420" ry="60" fill="#1F3B2D" opacity=".10"/>
-  <path d="M220 610C240 860 400 990 600 990S960 860 980 610Z" fill="url(#bowl)"/>
+  ${
+    standing
+      ? ""
+      : `<path d="M220 610C240 860 400 990 600 990S960 860 980 610Z" fill="url(#bowl)"/>
   <ellipse cx="600" cy="610" rx="380" ry="118" fill="#FBF6EC"/>
-  <ellipse cx="600" cy="612" rx="346" ry="102" fill="#E8DCC6"/>
+  <ellipse cx="600" cy="612" rx="346" ry="102" fill="#E8DCC6"/>`
+  }
   ${inside}
   ${around}
   <text x="600" y="1150" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="30" letter-spacing="6" fill="#1F3B2D" opacity=".45">SAMPLE IMAGE</text>

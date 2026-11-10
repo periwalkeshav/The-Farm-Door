@@ -38,10 +38,10 @@ export function paiseToRupeesString(paise: number): string {
   return rest === 0 ? String(rupees) : `${rupees}.${String(rest).padStart(2, "0")}`;
 }
 
-/** Price per 100 g in paise, rounded to the nearest paisa. */
-export function pricePer100g(pricePaise: number, netWeightGrams: number): number | null {
-  if (!netWeightGrams || netWeightGrams <= 0) return null;
-  return Math.round((pricePaise * 100) / netWeightGrams);
+/** Price per 100 g (or per 100 ml for products sold by volume) in paise, rounded to the nearest paisa. */
+export function pricePer100(pricePaise: number, netQuantity: number): number | null {
+  if (!netQuantity || netQuantity <= 0) return null;
+  return Math.round((pricePaise * 100) / netQuantity);
 }
 
 /** Whole-number discount percentage from MRP, rounded down so we never overstate it. */
@@ -57,9 +57,15 @@ export function ceilToRupee(paise: number): number {
 
 /** "250 g", "1 kg", "1.5 kg" */
 export function formatWeight(grams: number): string {
-  if (grams >= 1000) {
-    const kg = grams / 1000;
-    return `${Number.isInteger(kg) ? kg : kg.toFixed(2).replace(/0+$/, "")} kg`;
+  return formatQuantity(grams, "g");
+}
+
+/** A pack's net quantity: "250 g", "1 kg" by weight; "500 ml", "1 L", "1.5 L" by volume. */
+export function formatQuantity(amount: number, unit: "g" | "ml"): string {
+  const [small, big] = unit === "ml" ? ["ml", "L"] : ["g", "kg"];
+  if (amount >= 1000) {
+    const n = amount / 1000;
+    return `${Number.isInteger(n) ? n : n.toFixed(2).replace(/0+$/, "")} ${big}`;
   }
-  return `${grams} g`;
+  return `${amount} ${small}`;
 }

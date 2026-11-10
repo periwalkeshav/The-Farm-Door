@@ -1,18 +1,15 @@
-import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { media } from "@/db/schema";
+import { MEDIA_SIZES, type MediaSize } from "@/lib/media-url";
+import { imageBytes } from "@/server/media";
 
 /** Serves product images stored in the database. Content never changes for an id, so it's cached for a year. */
 export async function GET(_req: Request, ctx: RouteContext<"/media/[id]/[size]">) {
   const { id, size } = await ctx.params;
   const mediaId = Number(id);
-  if (!Number.isInteger(mediaId) || mediaId <= 0 || (size !== "full" && size !== "thumb")) {
+  if (!Number.isInteger(mediaId) || mediaId <= 0 || !MEDIA_SIZES.includes(size as MediaSize)) {
     return new Response("Not found", { status: 404 });
   }
-  const [row] = await getDb()
-    .select({ data: size === "full" ? media.full : media.thumb, mime: media.mime })
-    .from(media)
-    .where(eq(media.id, mediaId));
+  const row = await imageBytes(getDb(), mediaId, size as MediaSize);
   if (!row) return new Response("Not found", { status: 404 });
   return new Response(new Uint8Array(row.data), {
     headers: {

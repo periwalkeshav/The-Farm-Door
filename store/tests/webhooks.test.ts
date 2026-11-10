@@ -2,60 +2,16 @@ import { createHmac } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { emailLog, orders, shipments } from "@/db/schema";
-import { addToCart, createCart } from "@/server/cart";
-import { summarizeCart } from "@/server/checkout";
 import { runTick } from "@/server/jobs";
 import { codConfirmToken } from "@/server/orders/common";
 import { confirmCodOrder, packOrder } from "@/server/orders/lifecycle";
-import { placeOrder } from "@/server/orders/place";
 import { mockPaymentId } from "@/server/payments/mock";
+import { writeSettings } from "@/server/settings";
 import { verifyWebhookSignature } from "@/server/payments/razorpay";
-import { storeSettingsSchema, writeSettings } from "@/server/settings";
 import { mapShiprocketStatus } from "@/server/shipping/shiprocket";
 import { handleRazorpayEvent, handleShiprocketEvent } from "@/server/webhooks";
-import { db, makeProductWithVariant, makeStaff, resetDb } from "./support/db";
-
-async function placedOrder(paymentMethod: "PREPAID" | "COD") {
-  await writeSettings(db, "shipping", {
-    pickupPincode: "302001",
-    freeShippingThresholdPaise: null,
-    handlingFeePaise: 0,
-    packagingWeightGrams: 80,
-    boxLengthCm: 20,
-    boxBreadthCm: 15,
-    boxHeightCm: 10,
-    courierChoice: "RECOMMENDED",
-  });
-  await writeSettings(db, "store", { ...storeSettingsSchema.parse({}), state: "Rajasthan" });
-  const { variant } = await makeProductWithVariant();
-  const cart = await createCart(db, null);
-  await addToCart(db, cart.id, variant.id, 1);
-  const summary = await summarizeCart(db, { cartId: cart.id, couponCode: null, pincode: "560001", paymentMethod, email: "k@example.com" });
-  const r = await placeOrder(db, {
-    cartId: cart.id,
-    couponCode: null,
-    signedInCustomerId: null,
-    idempotencyKey: crypto.randomUUID(),
-    email: "k@example.com",
-    phone: "9876543210",
-    name: "Kiran Rao",
-    line1: "4 MG Road",
-    line2: "",
-    landmark: "",
-    city: "Bengaluru",
-    state: "Karnataka",
-    pincode: "560001",
-    gstin: "",
-    businessName: "",
-    paymentMethod,
-    expectedTotalPaise: summary.breakdown.totalPaise!,
-    marketingOptIn: false,
-    saveAddress: false,
-    note: "",
-  });
-  if (!r.ok) throw new Error(r.message);
-  return r;
-}
+import { db, makeStaff, resetDb } from "./support/db";
+import { placedOrder } from "./support/orders";
 
 describe("Razorpay webhook", () => {
   beforeEach(resetDb);
@@ -125,7 +81,7 @@ describe("scheduled job", () => {
   it("expires overdue orders and sends the daily summary only once", async () => {
     const placed = await placedOrder("PREPAID");
     await db.update(orders).set({ reservationExpiresAt: new Date(Date.now() - 60 * 60_000) }).where(eq(orders.id, placed.order.id));
-    await writeSettings(db, "notifications", { ownerEmail: "owner@example.com", newOrderEmails: true, lowStockEmails: true, dailySummary: true });
+    await writeSettings(db, "notifications", { ownerEmail: "owner@example.com", newOrderEmails: true, lowStockEmails: true, dailySummary: true, unpaidReminder: false, unpaidReminderHours: 3 });
     const tenAmIst = new Date(`${new Date().toISOString().slice(0, 10)}T10:00:00+05:30`);
     const first = await runTick(db, tenAmIst);
     expect(first.orders).toMatchObject({ expired: 1 });

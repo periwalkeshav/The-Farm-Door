@@ -2,10 +2,12 @@
  * Coupon checks that need the database (dates, usage limits). The discount
  * maths lives in src/lib/pricing.ts.
  */
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 import type { DbOrTx } from "@/db";
 import { couponRedemptions, coupons } from "@/db/schema";
+import { describeCoupon } from "@/lib/coupon-label";
 import { evaluateCoupon, type CouponResult, type CouponRule, type PricingLine } from "@/lib/pricing";
+import { referralRules } from "./loyalty";
 
 export type CouponRow = typeof coupons.$inferSelect;
 
@@ -41,7 +43,13 @@ export async function checkCoupon(db: DbOrTx, rawCode: string, lines: PricingLin
       .where(and(eq(couponRedemptions.couponId, coupon.id), eq(couponRedemptions.email, email), eq(couponRedemptions.isActive, true)));
     if (used >= coupon.usageLimitPerCustomer) return { ok: false, reason: "You've already used this code." };
   }
-  const rule = toRule(coupon);
+  let rule = toRule(coupon);
+  if (coupon.referrerCustomerId) {
+    // Personal referral codes follow the current refer-a-friend settings.
+    const referral = await referralRules(db, coupon.referrerCustomerId, email);
+    if (!referral.ok) return { ok: false, reason: referral.reason };
+    rule = { ...rule, type: "PERCENT", value: referral.percentBp, maxDiscountPaise: referral.maxDiscountPaise, minOrderPaise: 0, scope: "ALL" };
+  }
   const result = evaluateCoupon(rule, lines);
   if (!result.ok) return result;
   return { ok: true, coupon, rule, result };
@@ -70,4 +78,24 @@ export async function releaseCouponUse(tx: DbOrTx, orderId: number) {
       .set({ timesUsed: sql`greatest(${coupons.timesUsed} - 1, 0)` })
       .where(eq(coupons.id, redemption.couponId));
   }
+}
+
+/** The code to advertise in the scrolling banner: the newest featured coupon that works right now. */
+export async function featuredCoupon(db: DbOrTx, now = new Date()) {
+  const [c] = await db
+    .select()
+    .from(coupons)
+    .where(
+      and(
+        eq(coupons.isFeatured, true),
+        eq(coupons.isActive, true),
+        isNull(coupons.referrerCustomerId),
+        or(isNull(coupons.startsAt), lte(coupons.startsAt, now)),
+        or(isNull(coupons.endsAt), gt(coupons.endsAt, now)),
+        or(isNull(coupons.usageLimitTotal), sql`${coupons.timesUsed} < ${coupons.usageLimitTotal}`),
+      ),
+    )
+    .orderBy(desc(coupons.createdAt))
+    .limit(1);
+  return c ? { code: c.code, label: c.description || describeCoupon(c) } : null;
 }

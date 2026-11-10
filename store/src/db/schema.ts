@@ -10,6 +10,7 @@
  */
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   check,
   customType,
@@ -43,6 +44,8 @@ const id = () => integer().primaryKey().generatedAlwaysAsIdentity();
 
 export const productStatus = pgEnum("product_status", ["DRAFT", "ACTIVE", "ARCHIVED"]);
 export const stockUnit = pgEnum("stock_unit", ["PACK", "GRAM"]);
+/** How a product's packs are measured: by weight (grams) or, for oils and other liquids, by volume (millilitres). */
+export const netUnit = pgEnum("net_unit", ["g", "ml"]);
 export const stockMovementReason = pgEnum("stock_movement_reason", [
   "RESERVE", // held for an order awaiting payment / COD confirmation
   "RELEASE", // hold released (payment expired, order cancelled before confirmation)
@@ -50,6 +53,7 @@ export const stockMovementReason = pgEnum("stock_movement_reason", [
   "RESTOCK", // goods received
   "ADJUSTMENT", // manual correction (damage, count difference, ...)
   "RETURN", // goods back in stock after cancellation / return to origin
+  "ASSEMBLY", // gift boxes / combos made up from (or taken apart into) their contents
 ]);
 export const staffRole = pgEnum("staff_role", ["OWNER", "MANAGER", "PACKER", "ACCOUNTANT"]);
 export const sessionSubject = pgEnum("session_subject", ["CUSTOMER", "STAFF"]);
@@ -96,6 +100,7 @@ export const refundMode = pgEnum("refund_mode", ["RAZORPAY", "MANUAL"]);
 export const couponType = pgEnum("coupon_type", ["PERCENT", "FIXED", "FREE_SHIPPING"]);
 export const couponScope = pgEnum("coupon_scope", ["ALL", "PRODUCTS", "CATEGORIES"]);
 export const reviewStatus = pgEnum("review_status", ["PENDING", "APPROVED", "REJECTED"]);
+export const enquiryStatus = pgEnum("enquiry_status", ["NEW", "CONTACTED", "CLOSED"]);
 export const shipmentStatus = pgEnum("shipment_status", [
   "CREATED",
   "PICKUP_SCHEDULED",
@@ -126,7 +131,12 @@ export const media = pgTable("media", {
   width: integer().notNull(),
   height: integer().notNull(),
   full: bytea().notNull(),
+  /** 600 px square crop for product cards. */
   thumb: bytea().notNull(),
+  /** 800 px wide for phone screens; made on first request for images uploaded before it existed. */
+  medium: bytea(),
+  /** 300 px square crop for small screens and cart lines; made on first request like medium. */
+  small: bytea(),
   alt: text().notNull().default(""),
   createdAt: createdAt(),
 });
@@ -140,6 +150,9 @@ export const categories = pgTable("categories", {
   slug: text().notNull().unique(),
   name: text().notNull(),
   description: text().notNull().default(""),
+  /** Hindi versions for the /hi pages; English is shown when empty. */
+  nameHi: text().notNull().default(""),
+  descriptionHi: text().notNull().default(""),
   imageId: integer().references(() => media.id, { onDelete: "set null" }),
   sortOrder: integer().notNull().default(0),
   isActive: boolean().notNull().default(true),
@@ -152,7 +165,13 @@ export const collections = pgTable("collections", {
   slug: text().notNull().unique(),
   name: text().notNull(),
   description: text().notNull().default(""),
+  nameHi: text().notNull().default(""),
+  descriptionHi: text().notNull().default(""),
   showOnHome: boolean().notNull().default(false),
+  /** Listed as a chip in the home page's "Shop by dish" row. */
+  showInShopBy: boolean().notNull().default(false),
+  /** Shown as a filter button on this category's page (e.g. "Whole spices" inside Spices). */
+  categoryId: integer().references(() => categories.id, { onDelete: "set null" }),
   sortOrder: integer().notNull().default(0),
   isActive: boolean().notNull().default(true),
   createdAt: createdAt(),
@@ -168,6 +187,8 @@ export const products = pgTable(
     subtitle: text().notNull().default(""),
     description: text().notNull().default(""),
     categoryId: integer().references(() => categories.id, { onDelete: "set null" }),
+    /** Unit of each pack's net quantity (`product_variants.net_weight_grams` holds millilitres when this is "ml"). */
+    netUnit: netUnit().notNull().default("g"),
     status: productStatus().notNull().default("DRAFT"),
     tags: text().array().notNull().default(sql`'{}'::text[]`),
     ingredients: text().notNull().default(""),
@@ -177,6 +198,13 @@ export const products = pgTable(
     countryOfOrigin: text().notNull().default("India"),
     allergenInfo: text().notNull().default(""),
     nutritionInfo: text().notNull().default(""),
+    /** Hindi versions for the /hi pages; English is shown for any left empty. */
+    nameHi: text().notNull().default(""),
+    subtitleHi: text().notNull().default(""),
+    descriptionHi: text().notNull().default(""),
+    ingredientsHi: text().notNull().default(""),
+    usageInstructionsHi: text().notNull().default(""),
+    storageInstructionsHi: text().notNull().default(""),
     /** Options offered, in display order, e.g. [{name:"Form", values:["Whole","Powder"]}, {name:"Size", ...}] */
     options: jsonb().$type<ProductOption[]>().notNull().default([]),
     isFeatured: boolean().notNull().default(false),
@@ -260,7 +288,7 @@ export const productVariants = pgTable(
     optionValues: jsonb().$type<Record<string, string>>().notNull().default({}),
     pricePaise: integer().notNull(),
     mrpPaise: integer().notNull(),
-    /** Net contents in grams, used for "price per 100 g" and bulk stock deduction. */
+    /** Net contents in the product's unit (grams, or millilitres for liquids): "price per 100 g/ml" and bulk stock deduction. */
     netWeightGrams: integer().notNull(),
     /** Weight of the packed unit including packaging, used for courier rates. */
     shippingWeightGrams: integer().notNull(),
@@ -355,6 +383,8 @@ export const staffUsers = pgTable("staff_users", {
   role: staffRole().notNull(),
   totpSecretEnc: text(),
   totpEnabled: boolean().notNull().default(false),
+  /** The 30-second step of the last code used to sign in, so the same code can't sign in twice. */
+  totpLastStep: integer(),
   isActive: boolean().notNull().default(true),
   failedLogins: integer().notNull().default(0),
   lockedUntil: timestamp({ withTimezone: true }),
@@ -362,6 +392,21 @@ export const staffUsers = pgTable("staff_users", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+/** One-time backup codes for staff who can't use their authenticator app. Only hashes are stored. */
+export const staffRecoveryCodes = pgTable(
+  "staff_recovery_codes",
+  {
+    id: id(),
+    staffUserId: integer()
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "cascade" }),
+    codeHash: text().notNull(),
+    usedAt: timestamp({ withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("staff_recovery_codes_staff_idx").on(t.staffUserId)],
+);
 
 export const sessions = pgTable(
   "sessions",
@@ -451,7 +496,9 @@ export const cartItems = pgTable(
 /* Coupons                                                             */
 /* ------------------------------------------------------------------ */
 
-export const coupons = pgTable("coupons", {
+export const coupons = pgTable(
+  "coupons",
+  {
   id: id(),
   code: text().notNull().unique(), // upper-case
   description: text().notNull().default(""),
@@ -469,9 +516,15 @@ export const coupons = pgTable("coupons", {
   usageLimitPerCustomer: integer(),
   timesUsed: integer().notNull().default(0),
   isActive: boolean().notNull().default(true),
+  /** Advertised in the scrolling banner at the top of every page (the newest featured, valid code is shown). */
+  isFeatured: boolean().notNull().default(false),
+  /** Set for a customer's personal referral code: new customers only, rewards the referrer. */
+  referrerCustomerId: integer().references(() => customers.id, { onDelete: "cascade" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+  },
+  (t) => [uniqueIndex("coupons_referrer_idx").on(t.referrerCustomerId)],
+);
 
 /* ------------------------------------------------------------------ */
 /* Orders                                                              */
@@ -533,6 +586,17 @@ export const orders = pgTable(
     customerNote: text().notNull().default(""),
     cancelReason: text().notNull().default(""),
     marketingOptIn: boolean().notNull().default(false),
+    /** When the one-time "you didn't finish paying" reminder went out (unpaid prepaid orders only). */
+    paymentReminderSentAt: timestamp({ withTimezone: true }),
+    /** When the "how was your order?" email went out after delivery. */
+    reviewRequestSentAt: timestamp({ withTimezone: true }),
+    /** The customer asked for order updates on WhatsApp at checkout. */
+    whatsappOptIn: boolean().notNull().default(false),
+    /** Loyalty points used on this order, and their value (included in discountPaise). */
+    pointsRedeemed: integer().notNull().default(0),
+    pointsDiscountPaise: integer().notNull().default(0),
+    /** Set on a free replacement sent for a problem with an earlier order (no charge, no invoice). */
+    replacementForOrderId: integer().references((): AnyPgColumn => orders.id, { onDelete: "set null" }),
 
     placedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     confirmedAt: timestamp({ withTimezone: true }),
@@ -756,6 +820,8 @@ export type InvoiceSnapshot = {
     state: string;
     stateCode: string;
     fssaiNumber: string;
+    /** Company CIN; absent on invoices issued before it was added. */
+    cin?: string;
   };
   buyer: {
     name: string;
@@ -853,6 +919,32 @@ export const newsletterSubscribers = pgTable("newsletter_subscribers", {
   unsubscribedAt: timestamp({ withTimezone: true }),
 });
 
+/** People who asked for no reminder or marketing emails. Order and delivery emails still go out. */
+export const emailOptOuts = pgTable("email_opt_outs", {
+  email: text().primaryKey(),
+  createdAt: createdAt(),
+});
+
+/** Bulk / business order enquiries from the public form. */
+export const enquiries = pgTable(
+  "enquiries",
+  {
+    id: id(),
+    name: text().notNull(),
+    businessName: text().notNull().default(""),
+    gstin: text().notNull().default(""),
+    email: text().notNull(),
+    phone: text().notNull(),
+    city: text().notNull().default(""),
+    requirement: text().notNull(),
+    status: enquiryStatus().notNull().default("NEW"),
+    staffNote: text().notNull().default(""),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("enquiries_status_idx").on(t.status, t.createdAt)],
+);
+
 export const emailLog = pgTable(
   "email_log",
   {
@@ -863,8 +955,237 @@ export const emailLog = pgTable(
     status: text().notNull(), // SENT | FAILED | LOGGED (development transport)
     html: text().notNull().default(""),
     error: text().notNull().default(""),
+    /** File names of attachments (e.g. the PDF invoice); the files themselves aren't kept. */
+    attachments: text().array().notNull().default(sql`'{}'::text[]`),
     orderId: integer(),
     createdAt: createdAt(),
   },
   (t) => [index("email_log_created_idx").on(t.createdAt)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Site errors (grouped; the owner is emailed at most hourly per error) */
+/* ------------------------------------------------------------------ */
+
+export const errorEvents = pgTable(
+  "error_events",
+  {
+    id: id(),
+    /** Hash of where and what, so repeats of the same error are counted together. */
+    fingerprint: text().notNull().unique(),
+    source: text().notNull(), // server | browser
+    message: text().notNull(),
+    digest: text().notNull().default(""),
+    route: text().notNull().default(""),
+    /** Path without the query string (which can hold private order links). */
+    path: text().notNull().default(""),
+    method: text().notNull().default(""),
+    stack: text().notNull().default(""),
+    count: integer().notNull().default(1),
+    firstSeenAt: createdAt(),
+    lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    lastAlertedAt: timestamp({ withTimezone: true }),
+    resolvedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [index("error_events_open_idx").on(t.resolvedAt, t.lastSeenAt)],
+);
+
+/** "Email me when it's back": one email per request when a sold-out pack is in stock again. */
+export const stockAlerts = pgTable(
+  "stock_alerts",
+  {
+    id: id(),
+    variantId: integer()
+      .notNull()
+      .references(() => productVariants.id, { onDelete: "cascade" }),
+    email: text().notNull(),
+    createdAt: createdAt(),
+    notifiedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [uniqueIndex("stock_alerts_variant_email_idx").on(t.variantId, t.email), index("stock_alerts_pending_idx").on(t.notifiedAt, t.variantId)],
+);
+
+/** Products a signed-in customer saved for later. */
+export const wishlistItems = pgTable(
+  "wishlist_items",
+  {
+    customerId: integer()
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    productId: integer()
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.customerId, t.productId] })],
+);
+
+/** "Remind me to reorder": a repeating email for a delivered order, until the customer stops it. */
+export const refillReminders = pgTable(
+  "refill_reminders",
+  {
+    id: id(),
+    orderId: integer()
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    email: text().notNull(),
+    intervalDays: integer().notNull(),
+    nextRemindAt: timestamp({ withTimezone: true }).notNull(),
+    lastSentAt: timestamp({ withTimezone: true }),
+    cancelledAt: timestamp({ withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("refill_reminders_order_idx").on(t.orderId), index("refill_reminders_due_idx").on(t.cancelledAt, t.nextRemindAt)],
+);
+
+export const loyaltyReason = pgEnum("loyalty_reason", ["EARNED", "REDEEMED", "REDEEM_RETURNED", "REFUND_REVERSAL", "REFERRAL", "ADJUSTMENT"]);
+
+/** Loyalty points ledger. A customer's balance is the sum of their rows; rows are never edited. */
+export const loyaltyLedger = pgTable(
+  "loyalty_ledger",
+  {
+    id: id(),
+    customerId: integer()
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    orderId: integer().references(() => orders.id, { onDelete: "set null" }),
+    points: integer().notNull(),
+    reason: loyaltyReason().notNull(),
+    note: text().notNull().default(""),
+    staffUserId: integer().references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("loyalty_customer_idx").on(t.customerId, t.createdAt), index("loyalty_order_idx").on(t.orderId, t.reason)],
+);
+
+/** Recipe for a gift box / combo: what one box (a pack stock pool) contains. */
+export const kitComponents = pgTable(
+  "kit_components",
+  {
+    kitItemId: integer()
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: "cascade" }),
+    componentItemId: integer()
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: "restrict" }),
+    /** Per box: packs for pack pools, grams for loose pools. */
+    quantity: integer().notNull(),
+    sortOrder: integer().notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.kitItemId, t.componentItemId] }), check("kit_component_qty_positive", sql`${t.quantity} > 0`), check("kit_not_self", sql`${t.kitItemId} <> ${t.componentItemId}`)],
+);
+
+export const recipeStatus = pgEnum("recipe_status", ["DRAFT", "PUBLISHED"]);
+
+/** Recipes that use the store's spices (shown at /recipes and on product pages). */
+export const recipes = pgTable(
+  "recipes",
+  {
+    id: id(),
+    slug: text().notNull().unique(),
+    title: text().notNull(),
+    summary: text().notNull().default(""),
+    imageId: integer().references(() => media.id, { onDelete: "set null" }),
+    prepMinutes: integer(),
+    cookMinutes: integer(),
+    serves: integer(),
+    /** One ingredient per line. */
+    ingredients: text().notNull().default(""),
+    /** One step per line. */
+    method: text().notNull().default(""),
+    /** Spices from the shop used in this recipe. */
+    productIds: integer().array().notNull().default(sql`'{}'::integer[]`),
+    /** Hindi versions for the /hi pages; English is shown for any left empty. */
+    titleHi: text().notNull().default(""),
+    summaryHi: text().notNull().default(""),
+    ingredientsHi: text().notNull().default(""),
+    methodHi: text().notNull().default(""),
+    status: recipeStatus().notNull().default("DRAFT"),
+    publishedAt: timestamp({ withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("recipes_status_idx").on(t.status, t.publishedAt)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Problems with delivered orders                                      */
+/* ------------------------------------------------------------------ */
+
+export const problemKind = pgEnum("problem_kind", ["DAMAGED", "WRONG_ITEM", "EXPIRED", "MISSING", "OTHER"]);
+export const problemStatus = pgEnum("problem_status", ["OPEN", "REPLACEMENT_SENT", "REFUNDED", "CLOSED"]);
+
+/** A customer's report of a damaged, wrong, expired or missing item (within 48 hours of delivery). */
+export const problemReports = pgTable(
+  "problem_reports",
+  {
+    id: id(),
+    orderId: integer()
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    kind: problemKind().notNull(),
+    description: text().notNull(),
+    /** The order lines affected. */
+    orderItemIds: integer().array().notNull().default(sql`'{}'::integer[]`),
+    status: problemStatus().notNull().default("OPEN"),
+    /** Shown to the customer when the report is resolved. */
+    resolutionNote: text().notNull().default(""),
+    /** Internal notes, never shown to the customer. */
+    staffNote: text().notNull().default(""),
+    replacementOrderId: integer().references(() => orders.id, { onDelete: "set null" }),
+    refundPaise: integer(),
+    resolvedAt: timestamp({ withTimezone: true }),
+    resolvedByStaffId: integer().references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("problem_reports_status_idx").on(t.status, t.createdAt), index("problem_reports_order_idx").on(t.orderId)],
+);
+
+/** Customer photos for a problem report. Kept apart from catalogue images: only staff can see them. */
+export const problemPhotos = pgTable(
+  "problem_photos",
+  {
+    id: id(),
+    reportId: integer()
+      .notNull()
+      .references(() => problemReports.id, { onDelete: "cascade" }),
+    width: integer().notNull(),
+    height: integer().notNull(),
+    data: bytea().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("problem_photos_report_idx").on(t.reportId)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Scheduled sales                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A percentage off selling prices between two dates, for the whole shop,
+ * some categories or some products. When sales overlap, the bigger discount
+ * wins (they never stack). Prices never go above the normal selling price.
+ */
+export const sales = pgTable(
+  "sales",
+  {
+    id: id(),
+    name: text().notNull(),
+    /** Basis points: 10% = 1000. */
+    percentOffBp: integer().notNull(),
+    scope: couponScope().notNull().default("ALL"),
+    productIds: integer().array().notNull().default(sql`'{}'::integer[]`),
+    categoryIds: integer().array().notNull().default(sql`'{}'::integer[]`),
+    startsAt: timestamp({ withTimezone: true }).notNull(),
+    endsAt: timestamp({ withTimezone: true }).notNull(),
+    isActive: boolean().notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("sales_window_idx").on(t.isActive, t.startsAt, t.endsAt),
+    check("sales_percent_range", sql`${t.percentOffBp} between 100 and 9000`),
+    check("sales_window_order", sql`${t.endsAt} > ${t.startsAt}`),
+  ],
 );

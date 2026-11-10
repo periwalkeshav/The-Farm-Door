@@ -2,10 +2,10 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { getDb } from "@/db";
 import { cookieName, cookieOptions } from "@/data/cookies";
 import { clientIp, userAgent } from "@/data/request";
+import { loginEmailSchema } from "@/lib/form-schemas";
 import { requestLoginCode, verifyLoginCode } from "@/server/auth/customer";
 import { createSession, deleteSessionByToken } from "@/server/auth/sessions";
 import { mergeIntoCustomerCart } from "@/server/cart";
@@ -23,7 +23,7 @@ export async function loginAction(prev: LoginState, formData: FormData): Promise
   const db = getDb();
   const ip = await clientIp();
   const email = String(formData.get("email") ?? "").trim();
-  if (!z.email().safeParse(email).success) return { stage: "email", email, message: "Enter a valid email address.", error: true };
+  if (!loginEmailSchema.safeParse({ email }).success) return { stage: "email", email, message: "Enter a valid email address, like name@example.com.", error: true };
 
   if (formData.get("intent") !== "verify") {
     try {

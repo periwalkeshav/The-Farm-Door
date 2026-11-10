@@ -1,4 +1,4 @@
-import { getStaffSession } from "@/data/session";
+import { getStaffSession, staffSignedIn } from "@/data/session";
 import { getDb } from "@/db";
 import { resolveRange } from "@/server/date-ranges";
 import { EXPORTS, toCsv } from "@/server/exports";
@@ -11,8 +11,8 @@ export async function GET(request: Request, ctx: RouteContext<"/admin/export/[ki
   const spec = EXPORTS[kind];
   if (!spec) return new Response("Unknown export", { status: 404 });
   const staff = await getStaffSession();
-  if (!staff || staff.mfaPending || !staff.totpEnabled) return new Response("Please sign in to the admin panel.", { status: 401 });
-  if (!can(staff.role, "exports") || !can(staff.role, spec.permission)) return new Response("You don't have permission to download this.", { status: 403 });
+  if (!staffSignedIn(staff)) return new Response("Please sign in to the admin panel.", { status: 401 });
+  if ((spec.requiresExportPermission !== false && !can(staff.role, "exports")) || !can(staff.role, spec.permission)) return new Response("You don't have permission to download this.", { status: 403 });
 
   const params = new URL(request.url).searchParams;
   const sp: Record<string, string> = Object.fromEntries(params);
@@ -31,7 +31,7 @@ export async function GET(request: Request, ctx: RouteContext<"/admin/export/[ki
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="${csv.filename}"`,
-      "Cache-Control": "no-store",
+      "Cache-Control": "private, no-store",
     },
   });
 }

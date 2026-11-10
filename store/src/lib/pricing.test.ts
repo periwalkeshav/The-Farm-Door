@@ -107,3 +107,25 @@ describe("priceOrder", () => {
     expect(b.totalPaise).toBe(b.itemsTotalPaise + 5_000);
   });
 });
+
+describe("loyalty points discount", () => {
+  const lines = [
+    { variantId: 1, productId: 1, categoryId: null, unitPricePaise: 30_000, quantity: 1, gstRateBp: 500 },
+    { variantId: 2, productId: 2, categoryId: null, unitPricePaise: 10_000, quantity: 1, gstRateBp: 1200 },
+  ];
+  const shipping = { quotedCostPaise: 6_000, freeShippingThresholdPaise: 40_000 };
+
+  it("is spread across items after the coupon, so GST is on the reduced price", () => {
+    const b = priceOrder(lines, null, shipping, { selected: false, feePaise: 0 }, 4_000);
+    expect(b).toMatchObject({ discountPaise: 4_000, pointsDiscountPaise: 4_000, couponDiscountPaise: 0, itemsTotalPaise: 36_000 });
+    expect(b.lines.map((l) => l.discountPaise)).toEqual([3_000, 1_000]);
+    expect(b.lines.reduce((s, l) => s + l.totalPaise, 0)).toBe(36_000);
+  });
+
+  it("keeps free shipping earned before points, and never exceeds the items total", () => {
+    const b = priceOrder(lines, null, shipping, { selected: false, feePaise: 0 }, 99_999);
+    expect(b.pointsDiscountPaise).toBe(40_000);
+    expect(b.freeShipping).toBe(true);
+    expect(b.totalPaise).toBe(0);
+  });
+});

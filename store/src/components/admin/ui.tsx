@@ -105,9 +105,10 @@ export function BarTable({ rows, valueLabel, format }: { rows: { label: ReactNod
   );
 }
 
-export function DataTable({ head, children, empty }: { head: ReactNode[]; children: ReactNode; empty?: boolean }) {
+export function DataTable({ head, children, empty, label = "Table" }: { head: ReactNode[]; children: ReactNode; empty?: boolean; label?: string }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-line bg-paper">
+    // Focusable so a wide table can be scrolled sideways with the arrow keys on small screens.
+    <div role="region" aria-label={label} tabIndex={0} className="overflow-x-auto rounded-2xl border border-line bg-paper focus-visible:outline-2 focus-visible:outline-saffron">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-line text-left text-xs font-bold tracking-wide text-muted uppercase">

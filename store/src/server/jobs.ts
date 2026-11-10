@@ -1,6 +1,10 @@
 /**
  * Scheduled work, run by /api/cron/tick every ~5 minutes:
  *  - expire unpaid / unconfirmed orders (after checking Razorpay for missed payments)
+ *  - one reminder email for online-payment orders that were never paid
+ *  - "how are your spices?" review requests a few days after delivery
+ *  - "it's back in stock" emails for customers who asked
+ *  - reorder reminders customers set on delivered orders
  *  - pull courier tracking for shipments the webhook hasn't updated
  *  - clean up expired sessions, sign-in codes and rate-limit counters
  *  - once a day: low-stock alert and yesterday's summary email to the owner
@@ -17,6 +21,9 @@ import { dailySummaryEmail, lowStockEmail } from "./email/templates";
 import { syncActiveShipments } from "./orders/lifecycle";
 import { expireOverdueOrders } from "./orders/payment";
 import { purgeRateLimits } from "./rate-limit";
+import { sendReviewRequests, sendUnpaidReminders } from "./reminders";
+import { sendRefillReminders } from "./refills";
+import { sendBackInStockAlerts } from "./stock-alerts";
 import { addDays, istToday, lowStock, rangeFromDates, salesSummary, workQueue } from "./reports";
 import { readSettings } from "./settings";
 
@@ -39,6 +46,10 @@ export async function runTick(db: Database, now = new Date()) {
 async function work(db: Database, now: Date) {
   const summary: Record<string, unknown> = {};
   summary.orders = await expireOverdueOrders(db);
+  summary.unpaidReminders = await sendUnpaidReminders(db, now);
+  summary.reviewRequests = await sendReviewRequests(db, now);
+  summary.backInStock = await sendBackInStockAlerts(db);
+  summary.refillReminders = await sendRefillReminders(db, now);
   summary.trackingSynced = await syncActiveShipments(db);
   await purgeExpiredSessions(db);
   await db.delete(loginCodes).where(lt(loginCodes.createdAt, sql`now() - interval '1 day'`));

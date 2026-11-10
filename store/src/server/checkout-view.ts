@@ -3,6 +3,7 @@
  * is trusted on the way back: the server recalculates everything on submit.
  */
 import { mediaUrl } from "@/lib/media-url";
+import type { Locale } from "@/i18n/config";
 import type { CheckoutSummary } from "./checkout";
 
 export type CheckoutView = {
@@ -15,6 +16,7 @@ export type CheckoutView = {
     quantity: number;
     unitPricePaise: number;
     mrpPaise: number;
+    saleName: string | null;
     lineTotalPaise: number;
     sellable: number;
     issue: string | null;
@@ -25,6 +27,9 @@ export type CheckoutView = {
   couponOk: boolean;
   subtotalPaise: number;
   discountPaise: number;
+  couponDiscountPaise: number;
+  pointsDiscountPaise: number;
+  points: { enabled: boolean; balance: number; usable: number; valuePaise: number; applied: boolean; minToRedeem: number };
   shippingPaise: number | null;
   codFeePaise: number;
   totalPaise: number | null;
@@ -40,19 +45,20 @@ export type CheckoutView = {
   cod: { offered: boolean; available: boolean; reason: string | null; feePaise: number };
 };
 
-export function toCheckoutView(s: CheckoutSummary): CheckoutView {
+export function toCheckoutView(s: CheckoutSummary, lang: Locale = "en"): CheckoutView {
   const issues = new Map(s.issues.map((i) => [i.variantId, i.message]));
   const q = s.quote;
   return {
     lines: s.lines.map((l, i) => ({
       variantId: l.variantId,
       productSlug: l.productSlug,
-      productName: l.productName,
+      productName: lang === "hi" && l.productNameHi.trim() ? l.productNameHi : l.productName,
       variantTitle: l.variantTitle,
-      image: mediaUrl(l.imageId, "thumb"),
+      image: mediaUrl(l.imageId, "small"),
       quantity: l.quantity,
       unitPricePaise: l.unitPricePaise,
       mrpPaise: l.mrpPaise,
+      saleName: l.saleName,
       lineTotalPaise: s.breakdown.lines[i]?.subtotalPaise ?? l.unitPricePaise * l.quantity,
       sellable: l.sellable,
       issue: issues.get(l.variantId) ?? null,
@@ -63,6 +69,9 @@ export function toCheckoutView(s: CheckoutSummary): CheckoutView {
     couponOk: !!s.coupon?.ok,
     subtotalPaise: s.breakdown.subtotalPaise,
     discountPaise: s.breakdown.discountPaise,
+    couponDiscountPaise: s.breakdown.couponDiscountPaise,
+    pointsDiscountPaise: s.breakdown.pointsDiscountPaise,
+    points: s.points,
     shippingPaise: s.breakdown.shippingPaise,
     codFeePaise: s.breakdown.codFeePaise,
     totalPaise: s.breakdown.totalPaise,

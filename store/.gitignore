@@ -44,3 +44,10 @@ next-env.d.ts
 .pgdata/
 DEV_CREDENTIALS.md
 !.env.example
+
+# local database backups
+backups/
+
+# automated browser tests
+/test-results/
+/playwright-report/

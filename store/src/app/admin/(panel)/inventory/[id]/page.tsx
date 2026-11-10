@@ -1,8 +1,10 @@
-import { desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, ne } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { AdjustStockForm, PoolSettingsForm } from "@/components/admin/inventory-forms";
+import { AssembleForm, RecipeEditor } from "@/components/admin/kit-forms";
+import { getRecipe } from "@/server/kits";
 import { DataTable, PageHeader, Panel, StatTile, Td } from "@/components/admin/ui";
 import { requireStaff } from "@/data/session";
 import { getDb } from "@/db";
@@ -20,6 +22,7 @@ const REASONS: Record<string, string> = {
   RESTOCK: "Restocked",
   ADJUSTMENT: "Correction",
   RETURN: "Returned to stock",
+  ASSEMBLY: "Gift boxes made up / taken apart",
 };
 
 export default function PoolPage({ params }: PageProps<"/admin/inventory/[id]">) {
@@ -54,6 +57,13 @@ async function Pool({ params }: { params: PageProps<"/admin/inventory/[id]">["pa
   ]);
   const available = pool.onHand - pool.reserved;
   const manage = can(staff.role, "inventory.manage");
+  const [recipe, otherPools] =
+    pool.unit === "PACK"
+      ? await Promise.all([
+          getRecipe(db, pool.id),
+          db.select({ id: inventoryItems.id, name: inventoryItems.name, unit: inventoryItems.unit }).from(inventoryItems).where(and(eq(inventoryItems.isActive, true), ne(inventoryItems.id, pool.id))).orderBy(asc(inventoryItems.name)),
+        ])
+      : [[], []];
 
   return (
     <>
@@ -75,6 +85,25 @@ async function Pool({ params }: { params: PageProps<"/admin/inventory/[id]">["pa
             <PoolSettingsForm pool={pool} />
           </Panel>
         </div>
+      )}
+      {pool.unit === "PACK" && (manage || recipe.length > 0) && (
+        <Panel title="Gift box / combo contents" className="mb-6">
+          <p className="mb-4 text-sm text-muted">
+            For boxes packed in advance (a Diwali hamper, a starter combo). Record what one box holds, then make up boxes from stock. For a normal pack size, leave this empty. Ask your CA which GST rate applies to a mixed box.
+          </p>
+          {manage ? (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <RecipeEditor kitItemId={pool.id} initial={recipe} pools={otherPools} />
+              <AssembleForm kitItemId={pool.id} hasRecipe={recipe.length > 0} />
+            </div>
+          ) : (
+            <ul className="list-disc pl-5 text-sm">
+              {recipe.map((r) => (
+                <li key={r.componentItemId}>{r.unit === "GRAM" ? `${formatUnits(r.quantity, "GRAM")} ${r.name}` : `${r.quantity} × ${r.name}`}</li>
+              ))}
+            </ul>
+          )}
+        </Panel>
       )}
       <Panel title="Sold as" className="mb-6">
         {variants.length ? (

@@ -6,6 +6,7 @@ import nodemailer, { type Transporter } from "nodemailer";
 import type { DbOrTx } from "@/db";
 import { emailLog } from "@/db/schema";
 import { env } from "@/lib/env";
+import { isPlaceholder, readSettings } from "../settings";
 
 export type EmailMessage = {
   to: string;
@@ -14,6 +15,7 @@ export type EmailMessage = {
   text: string;
   template: string;
   orderId?: number;
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
 };
 
 let transporter: Transporter | undefined;
@@ -27,24 +29,30 @@ function smtp(): Transporter {
 export async function sendEmail(db: DbOrTx, message: EmailMessage): Promise<{ ok: boolean; error?: string }> {
   const e = env();
   if (e.EMAIL_TRANSPORT === "log") {
-    console.info(`[email:log] to=${message.to} subject="${message.subject}"\n${message.text}\n`);
+    const files = message.attachments?.map((a) => a.filename) ?? [];
+    console.info(`[email:log] to=${message.to} subject="${message.subject}"${files.length ? ` attachments=${files.join(",")}` : ""}\n${message.text}\n`);
     await db.insert(emailLog).values({
       to: message.to,
       subject: message.subject,
       template: message.template,
       status: "LOGGED",
       html: message.html,
+      attachments: files,
       orderId: message.orderId,
     });
     return { ok: true };
   }
   try {
-    await smtp().sendMail({ from: e.EMAIL_FROM, to: message.to, subject: message.subject, html: message.html, text: message.text });
+    // Replies go to the support address from Settings (the sending address may have no inbox).
+    const { supportEmail } = await readSettings(db, "store");
+    const replyTo = supportEmail && !isPlaceholder(supportEmail) ? supportEmail : undefined;
+    await smtp().sendMail({ from: e.EMAIL_FROM, replyTo, to: message.to, subject: message.subject, html: message.html, text: message.text, attachments: message.attachments });
     await db.insert(emailLog).values({
       to: message.to,
       subject: message.subject,
       template: message.template,
       status: "SENT",
+      attachments: message.attachments?.map((a) => a.filename) ?? [],
       orderId: message.orderId,
     });
     return { ok: true };

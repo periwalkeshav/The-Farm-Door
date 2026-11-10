@@ -89,11 +89,23 @@ export const PAYMENT_STATUS_LABELS: Record<OrderRow["paymentStatus"], string> = 
   PENDING: "Pending",
   PAID: "Paid",
   FAILED: "Not paid",
-  COD_PENDING: "Cash on delivery",
+  COD_PENDING: "To collect",
   COD_COLLECTED: "Cash collected",
   PARTIALLY_REFUNDED: "Partially refunded",
   REFUNDED: "Refunded",
   NOT_APPLICABLE: "Not applicable",
+};
+
+/** The payment line customers see on their order page, under "Cash on delivery" or "Online payment". */
+export const PAYMENT_STATUS_FOR_CUSTOMER: Record<OrderRow["paymentStatus"], string> = {
+  PENDING: "Not paid yet",
+  PAID: "Paid",
+  FAILED: "Payment didn't go through",
+  COD_PENDING: "Pay when it arrives",
+  COD_COLLECTED: "Paid on delivery",
+  PARTIALLY_REFUNDED: "Partly refunded",
+  REFUNDED: "Refunded",
+  NOT_APPLICABLE: "",
 };
 
 export class OrderActionError extends Error {}

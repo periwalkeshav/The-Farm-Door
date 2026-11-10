@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { TotpForm } from "@/components/admin/auth-forms";
+import { VerifyForms } from "@/components/admin/auth-forms";
 import { getStaffSession } from "@/data/session";
 
 export const metadata = { title: "2-step verification" };
@@ -22,5 +22,5 @@ async function Guard() {
   if (!s) redirect("/admin/login");
   if (!s.mfaPending) redirect("/admin");
   if (!s.totpEnabled) redirect("/admin/setup-2fa");
-  return <TotpForm mode="verify" />;
+  return <VerifyForms />;
 }

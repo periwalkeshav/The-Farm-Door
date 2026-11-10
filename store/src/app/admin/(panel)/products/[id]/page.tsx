@@ -80,6 +80,7 @@ async function Editor({ params }: { params: PageProps<"/admin/products/[id]">["p
             initialOptions={product.options}
             initialVariants={editorVariants}
             bulkPools={pools.filter((p) => p.isActive).map((p) => ({ id: p.id, name: p.name, available: p.onHand - p.reserved }))}
+            netUnit={product.netUnit}
           />
           {archived.length > 0 && (
             <p className="mt-3 text-xs text-muted">

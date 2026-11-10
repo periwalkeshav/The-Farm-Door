@@ -10,7 +10,9 @@ import { cookieName } from "@/data/cookies";
 import { clientIp } from "@/data/request";
 import { getCustomer } from "@/data/session";
 import { env } from "@/lib/env";
-import { isIndianState, isValidGstin, isValidPincode, normalizeIndianMobile } from "@/lib/india";
+import { checkoutFields, refineCheckout } from "@/lib/form-schemas";
+import { isIndianState, isValidPincode } from "@/lib/india";
+import { fieldErrorsFrom } from "@/lib/validation";
 import { getCartRow } from "@/server/cart";
 import { summarizeCart } from "@/server/checkout";
 import { toCheckoutView, type CheckoutView } from "@/server/checkout-view";
@@ -27,7 +29,7 @@ async function cartFromCookie() {
 }
 
 /** Recalculates the checkout summary for a pincode/payment choice (shown live as the customer fills the form). */
-export async function previewCheckoutAction(input: { pincode: string; paymentMethod: "PREPAID" | "COD"; email: string }): Promise<CheckoutView | null> {
+export async function previewCheckoutAction(input: { pincode: string; paymentMethod: "PREPAID" | "COD"; email: string; usePoints?: boolean; lang?: string }): Promise<CheckoutView | null> {
   const cart = await cartFromCookie();
   if (!cart) return null;
   const db = getDb();
@@ -38,8 +40,10 @@ export async function previewCheckoutAction(input: { pincode: string; paymentMet
     pincode: isValidPincode(input.pincode) ? input.pincode : null,
     paymentMethod: input.paymentMethod === "COD" ? "COD" : "PREPAID",
     email: z.email().safeParse(input.email).success ? input.email : null,
+    customerId: (await getCustomer())?.id ?? null,
+    usePoints: input.usePoints === true,
   });
-  return toCheckoutView(summary);
+  return toCheckoutView(summary, input.lang === "hi" ? "hi" : "en");
 }
 
 export async function lookupPincodeAction(pincode: string): Promise<{ city: string; state: string } | null> {
@@ -49,34 +53,17 @@ export async function lookupPincodeAction(pincode: string): Promise<{ city: stri
   return details && isIndianState(details.state) ? details : details ? { city: details.city, state: "" } : null;
 }
 
-const orderSchema = z.object({
-  idempotencyKey: z.uuid(),
-  email: z.email("Enter a valid email address.").max(200),
-  phone: z.string().transform((v, ctx) => {
-    const n = normalizeIndianMobile(v);
-    if (!n) ctx.addIssue({ code: "custom", message: "Enter a 10-digit Indian mobile number." });
-    return n ?? "";
-  }),
-  name: z.string().trim().min(2, "Enter the recipient's full name.").max(80),
-  line1: z.string().trim().min(5, "Enter the house/flat number and street.").max(200),
-  line2: z.string().trim().max(200).default(""),
-  landmark: z.string().trim().max(100).default(""),
-  city: z.string().trim().min(2, "Enter the city.").max(80),
-  state: z.string().refine(isIndianState, "Choose a state."),
-  pincode: z.string().refine(isValidPincode, "Enter a valid 6-digit pincode."),
-  gstin: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .default("")
-    .refine((v) => v === "" || isValidGstin(v), "That GSTIN doesn't look right."),
-  businessName: z.string().trim().max(120).default(""),
-  paymentMethod: z.enum(["PREPAID", "COD"]),
-  expectedTotalPaise: z.coerce.number().int(),
-  marketingOptIn: z.boolean().default(false),
-  saveAddress: z.boolean().default(false),
-  note: z.string().trim().max(300).default(""),
-});
+const orderSchema = checkoutFields
+  .extend({
+    idempotencyKey: z.uuid(),
+    paymentMethod: z.enum(["PREPAID", "COD"]),
+    expectedTotalPaise: z.coerce.number().int(),
+    marketingOptIn: z.boolean().default(false),
+    saveAddress: z.boolean().default(false),
+    usePoints: z.boolean().default(false),
+    whatsappOptIn: z.boolean().default(false),
+  })
+  .superRefine(refineCheckout);
 
 export type PlaceOrderState =
   | { ok: true; orderNumber: string; token: string; payment: PaymentStart; email: string; name: string; phone: string }
@@ -84,16 +71,16 @@ export type PlaceOrderState =
 
 export async function placeOrderAction(input: Record<string, unknown>): Promise<PlaceOrderState> {
   const parsed = orderSchema.safeParse(input);
-  if (!parsed.success) {
-    const fieldErrors: Record<string, string> = {};
-    for (const issue of parsed.error.issues) fieldErrors[String(issue.path[0])] ??= issue.message;
-    return { ok: false, message: "Please check the highlighted fields.", fieldErrors };
-  }
+  if (!parsed.success) return { ok: false, message: "Please check the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
   const data = parsed.data;
-  if (data.gstin && !data.businessName) return { ok: false, message: "Enter the business name for the GST invoice.", fieldErrors: { businessName: "Enter the registered business name." } };
 
   const db = getDb();
   if (!(await hitRateLimit(db, `place-order:${await clientIp()}`, 15, 600)).allowed) return { ok: false, message: "Too many attempts. Please wait a few minutes." };
+  // The state decides CGST+SGST vs IGST on the invoice, so it must match the pincode.
+  const listed = await shippingProvider().postcodeDetails(data.pincode);
+  if (listed && isIndianState(listed.state) && listed.state !== data.state) {
+    return { ok: false, message: "Please check the highlighted fields.", fieldErrors: { state: `Pincode ${data.pincode} is in ${listed.state}. Choose ${listed.state}, or check the pincode.` } };
+  }
   const cart = await cartFromCookie();
   if (!cart) return { ok: false, message: "Your cart is empty." };
   const customer = await getCustomer();
@@ -104,7 +91,7 @@ export async function placeOrderAction(input: Record<string, unknown>): Promise<
     signedInCustomerId: customer?.id ?? null,
     ...data,
   });
-  if (!result.ok) return { ok: false, message: result.message, view: result.summary ? toCheckoutView(result.summary) : null };
+  if (!result.ok) return { ok: false, message: result.message, view: result.summary ? toCheckoutView(result.summary, input.lang === "hi" ? "hi" : "en") : null };
   // Stale-while-revalidate: refresh product availability without re-rendering this checkout page.
   revalidateTag("stock", "max");
   return { ok: true, orderNumber: result.order.orderNumber, token: result.accessToken, payment: result.payment, email: result.order.email, name: result.order.shipName, phone: result.order.shipPhone };

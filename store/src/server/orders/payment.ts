@@ -12,6 +12,8 @@ import type { Database, DbOrTx } from "@/db";
 import { couponRedemptions, coupons, orders, payments, refunds } from "@/db/schema";
 import { env } from "@/lib/env";
 import { releaseCouponUse } from "../coupons";
+import { returnRedeemedPoints } from "../loyalty";
+import { notifyWhatsApp } from "../whatsapp";
 import { sendEmail } from "../email/send";
 import { adminNewOrderEmail, latePaymentRefundEmail, orderCancelledEmail, orderConfirmedEmail, refundEmail } from "../email/templates";
 import { commitStock, OutOfStockError, releaseStock, reserveStock } from "../inventory";
@@ -184,6 +186,7 @@ export async function processGatewayPayment(db: Database, input: GatewayPayment,
 export async function notifyOrderConfirmed(db: DbOrTx, order: OrderRow) {
   const data = await emailOrder(db, order);
   await sendEmail(db, { to: order.email, ...orderConfirmedEmail(data, orderUrl(order)), template: "order-confirmed", orderId: order.id });
+  await notifyWhatsApp(db, order, "order_confirmed", { link: orderUrl(order) });
   const notifications = await readSettings(db, "notifications");
   if (notifications.newOrderEmails && notifications.ownerEmail) {
     await sendEmail(db, {
@@ -254,6 +257,7 @@ export async function cancelUnconfirmedOrder(tx: DbOrTx, order: OrderRow, reason
   if (order.status !== "AWAITING_PAYMENT" && order.status !== "AWAITING_COD_CONFIRMATION") return false;
   if (order.stockState === "RESERVED") await releaseStock(tx, await orderNeeds(tx, order.id), order.id, reason);
   await releaseCouponUse(tx, order.id);
+  await returnRedeemedPoints(tx, order);
   await tx
     .update(orders)
     .set({
@@ -304,8 +308,7 @@ export async function expireOverdueOrders(db: Database): Promise<{ expired: numb
     const cancelled = await db.transaction(async (tx) => {
       const order = await lockOrder(tx, { id: candidate.id });
       if (!order) return null;
-      const reason =
-        order.paymentMethod === "COD" ? "Cancelled automatically: the cash-on-delivery order wasn't confirmed in time." : "Cancelled automatically: payment wasn't completed in time.";
+      const reason = order.paymentMethod === "COD" ? COD_TIMEOUT_REASON : PAYMENT_TIMEOUT_REASON;
       return (await cancelUnconfirmedOrder(tx, order, reason, "system")) ? order : null;
     });
     if (cancelled) {
@@ -322,6 +325,9 @@ export async function expireOverdueOrders(db: Database): Promise<{ expired: numb
   }
   return { expired, recovered };
 }
+
+export const PAYMENT_TIMEOUT_REASON = "Cancelled automatically: payment wasn't completed in time.";
+export const COD_TIMEOUT_REASON = "Cancelled automatically: the cash-on-delivery order wasn't confirmed in time.";
 
 export async function recordRefundWebhook(db: Database, providerRefundId: string, status: "processed" | "failed") {
   await db.transaction(async (tx) => {

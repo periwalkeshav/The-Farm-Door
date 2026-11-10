@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { saveVariantsAction, type CatalogResult } from "@/actions/admin/catalog";
 import { Notice, cn } from "@/components/ui";
+import { rupeesToPaise } from "@/lib/money";
 
 export type EditorVariant = {
   id?: number;
@@ -23,11 +24,13 @@ export type EditorVariant = {
 
 type Option = { name: string; valuesText: string };
 
-function parseWeight(value: string): number | null {
-  const m = /(\d+(?:\.\d+)?)\s*(kg|g|gm|gram|grams)\b/i.exec(value);
+/** The net quantity in an option value: "250 g", "1 kg" for weight; "500 ml", "1 L", "5 Ltr" for volume. */
+function parseQuantity(value: string, unit: "g" | "ml"): number | null {
+  const m = unit === "ml" ? /(\d+(?:\.\d+)?)\s*(ml|l|ltr|litre|liter|litres|liters)\b/i.exec(value) : /(\d+(?:\.\d+)?)\s*(kg|g|gm|gram|grams)\b/i.exec(value);
   if (!m) return null;
   const n = Number(m[1]);
-  return Math.round(m[2].toLowerCase() === "kg" ? n * 1000 : n);
+  const big = unit === "ml" ? !/^ml$/i.test(m[2]) : /^kg$/i.test(m[2]);
+  return Math.round(big ? n * 1000 : n);
 }
 
 function cartesian(options: { name: string; values: string[] }[]): Record<string, string>[] {
@@ -36,17 +39,61 @@ function cartesian(options: { name: string; values: string[] }[]): Record<string
 
 const key = (names: string[], values: Record<string, string>) => names.map((n) => values[n] ?? "").join("|");
 
+type Cell = "sku" | "price" | "mrp" | "netWeightGrams" | "shippingWeightGrams" | "hsnCode" | "initialQty";
+
+/** The same rules the server applies, checked per cell so each problem can be highlighted. */
+function findProblems(options: { name: string; values: string[] }[], rows: EditorVariant[], unit: "g" | "ml") {
+  const general: string[] = [];
+  const cells: Partial<Record<Cell, string>>[] = rows.map(() => ({}));
+  const named = options.filter((o) => o.name);
+  if (new Set(named.map((o) => o.name.toLowerCase())).size !== named.length) general.push("Option names must be different.");
+  for (const o of named) if (!o.values.length) general.push(`Add at least one value for “${o.name}”.`);
+  const skuCount = new Map<string, number>();
+  for (const r of rows) skuCount.set(r.sku.trim().toUpperCase(), (skuCount.get(r.sku.trim().toUpperCase()) ?? 0) + 1);
+  rows.forEach((r, i) => {
+    const c = cells[i];
+    const sku = r.sku.trim();
+    if (!sku) c.sku = "Enter a SKU.";
+    else if (!/^[A-Za-z0-9._-]{2,40}$/.test(sku)) c.sku = "2–40 letters, numbers, dot, dash or underscore.";
+    else if ((skuCount.get(sku.toUpperCase()) ?? 0) > 1) c.sku = "Each variant needs a different SKU.";
+    const price = rupeesToPaise(r.price);
+    const mrp = rupeesToPaise(r.mrp);
+    if (!r.price.trim()) c.price = "Enter the selling price.";
+    else if (price === null || price <= 0) c.price = "Enter a price in rupees, like 249 or 249.50.";
+    if (!r.mrp.trim()) c.mrp = "Enter the MRP.";
+    else if (mrp === null) c.mrp = "Enter the MRP in rupees.";
+    else if (price !== null && mrp < price) c.mrp = "MRP can't be less than the selling price.";
+    if (!r.netWeightGrams || r.netWeightGrams > 100_000) c.netWeightGrams = unit === "ml" ? "Enter the net volume in ml (1–100000)." : "Enter the net weight in grams (1–100000).";
+    if (!r.shippingWeightGrams || r.shippingWeightGrams > 100_000) c.shippingWeightGrams = "Enter the packed weight in grams.";
+    // (Only comparable for weights: a litre of oil weighs less than 1000 g.)
+    else if (unit === "g" && r.netWeightGrams && r.shippingWeightGrams < r.netWeightGrams) c.shippingWeightGrams = "Packed weight can't be less than the net weight.";
+    if (!/^\d{4,8}$/.test(r.hsnCode)) c.hsnCode = "HSN code is 4–8 digits.";
+    if (r.stockChoice === "new-pack" && r.initialQty > 100_000) c.initialQty = "Opening stock can't exceed 100000 packs.";
+  });
+  const labels: Record<Cell, string> = { sku: "SKU", price: "Price", mrp: "MRP", netWeightGrams: `Net ${unit}`, shippingWeightGrams: "Packed g", hsnCode: "HSN", initialQty: "Opening stock" };
+  const list = [...general];
+  rows.forEach((r, i) => {
+    for (const [k, msg] of Object.entries(cells[i])) list.push(`${Object.values(r.optionValues).join(" · ") || "Standard"} · ${labels[k as Cell]}: ${msg}`);
+  });
+  return { cells, list };
+}
+
 export function VariantEditor(props: {
   productId: number;
   productCode: string;
   initialOptions: { name: string; values: string[] }[];
   initialVariants: EditorVariant[];
   bulkPools: { id: number; name: string; available: number }[];
+  /** "ml" when the product is sold by volume (set under Details › Sold by). */
+  netUnit: "g" | "ml";
 }) {
+  const unit = props.netUnit;
   const [options, setOptions] = useState<Option[]>(props.initialOptions.length ? props.initialOptions.map((o) => ({ name: o.name, valuesText: o.values.join(", ") })) : [{ name: "Size", valuesText: "" }]);
   const [rows, setRows] = useState<EditorVariant[]>(props.initialVariants);
   const [result, setResult] = useState<CatalogResult>(null);
   const [pending, start] = useTransition();
+  // Problems are shown after the first save attempt, then update as cells are fixed.
+  const [checked, setChecked] = useState(false);
   const parsed = options.map((o) => ({ name: o.name.trim(), values: [...new Set(o.valuesText.split(",").map((v) => v.trim()).filter(Boolean))] }));
 
   function regenerate() {
@@ -57,14 +104,15 @@ export function VariantEditor(props: {
     const next = cartesian(valid).map((combo): EditorVariant => {
       const existing = byKey.get(key(names, combo));
       if (existing) return { ...existing, optionValues: combo };
-      const grams = parseWeight(Object.values(combo).join(" ")) ?? template?.netWeightGrams ?? 100;
+      const grams = parseQuantity(Object.values(combo).join(" "), unit) ?? template?.netWeightGrams ?? 100;
       return {
         optionValues: combo,
         sku: `${props.productCode}-${Object.values(combo).map((v) => v.replace(/\s+/g, "").toUpperCase().slice(0, 6)).join("-")}`,
         price: "",
         mrp: "",
         netWeightGrams: grams,
-        shippingWeightGrams: grams + 30,
+        // A starting guess for the packed weight: liquids are a little lighter than water, plus a bottle.
+        shippingWeightGrams: unit === "ml" ? Math.round(grams * 0.92) + 250 : grams + 30,
         hsnCode: template?.hsnCode ?? "",
         gstRatePercent: template?.gstRatePercent ?? 5,
         isActive: true,
@@ -82,6 +130,11 @@ export function VariantEditor(props: {
   }
 
   function save() {
+    setChecked(true);
+    if (findProblems(parsed, rows, unit).list.length) {
+      setResult(null);
+      return;
+    }
     const opts = parsed.filter((o) => o.name && o.values.length);
     const payload = {
       options: opts,
@@ -110,6 +163,11 @@ export function VariantEditor(props: {
   const names = parsed.map((o) => o.name);
   const optionsChanged = JSON.stringify(parsed.filter((o) => o.name && o.values.length)) !== JSON.stringify(props.initialOptions) && rows.some((r) => names.some((n) => !(n in r.optionValues)));
   const cell = "field px-2 py-1.5 text-sm";
+  const problems = checked ? findProblems(parsed, rows, unit) : { cells: rows.map(() => ({})) as Partial<Record<Cell, string>>[], list: [] as string[] };
+  const bad = (i: number, c: Cell) => {
+    const msg = problems.cells[i]?.[c];
+    return msg ? { "aria-invalid": true as const, title: msg } : {};
+  };
 
   return (
     <div className="space-y-5">
@@ -160,7 +218,7 @@ export function VariantEditor(props: {
               <th className="p-2">SKU</th>
               <th className="p-2">Price ₹ (incl. GST)</th>
               <th className="p-2">MRP ₹</th>
-              <th className="p-2">Net g</th>
+              <th className="p-2">Net {unit}</th>
               <th className="p-2">Packed g</th>
               <th className="p-2">HSN</th>
               <th className="p-2">GST %</th>
@@ -175,22 +233,22 @@ export function VariantEditor(props: {
                   <input type="checkbox" aria-label="On sale" checked={r.isActive} onChange={(e) => update(i, { isActive: e.target.checked })} className="size-4 accent-forest" />
                 </td>
                 <td className="p-2">
-                  <input aria-label="SKU" className={cn(cell, "w-36 font-mono uppercase")} value={r.sku} onChange={(e) => update(i, { sku: e.target.value })} />
+                  <input aria-label="SKU" {...bad(i, "sku")} maxLength={40} className={cn(cell, "w-36 font-mono uppercase")} value={r.sku} onChange={(e) => update(i, { sku: e.target.value })} />
                 </td>
                 <td className="p-2">
-                  <input aria-label="Price" className={cn(cell, "w-24")} inputMode="decimal" value={r.price} onChange={(e) => update(i, { price: e.target.value })} />
+                  <input aria-label="Price" {...bad(i, "price")} maxLength={10} className={cn(cell, "w-24")} inputMode="decimal" value={r.price} onChange={(e) => update(i, { price: e.target.value })} />
                 </td>
                 <td className="p-2">
-                  <input aria-label="MRP" className={cn(cell, "w-24")} inputMode="decimal" value={r.mrp} onChange={(e) => update(i, { mrp: e.target.value })} />
+                  <input aria-label="MRP" {...bad(i, "mrp")} maxLength={10} className={cn(cell, "w-24")} inputMode="decimal" value={r.mrp} onChange={(e) => update(i, { mrp: e.target.value })} />
                 </td>
                 <td className="p-2">
-                  <input aria-label="Net weight in grams" className={cn(cell, "w-20")} inputMode="numeric" value={r.netWeightGrams} onChange={(e) => update(i, { netWeightGrams: Number(e.target.value.replace(/\D/g, "")) })} />
+                  <input aria-label={unit === "ml" ? "Net volume in ml" : "Net weight in grams"} {...bad(i, "netWeightGrams")} maxLength={6} className={cn(cell, "w-20")} inputMode="numeric" value={r.netWeightGrams} onChange={(e) => update(i, { netWeightGrams: Number(e.target.value.replace(/\D/g, "")) })} />
                 </td>
                 <td className="p-2">
-                  <input aria-label="Packed weight in grams" className={cn(cell, "w-20")} inputMode="numeric" value={r.shippingWeightGrams} onChange={(e) => update(i, { shippingWeightGrams: Number(e.target.value.replace(/\D/g, "")) })} />
+                  <input aria-label="Packed weight in grams" {...bad(i, "shippingWeightGrams")} maxLength={6} className={cn(cell, "w-20")} inputMode="numeric" value={r.shippingWeightGrams} onChange={(e) => update(i, { shippingWeightGrams: Number(e.target.value.replace(/\D/g, "")) })} />
                 </td>
                 <td className="p-2">
-                  <input aria-label="HSN code" className={cn(cell, "w-24")} inputMode="numeric" value={r.hsnCode} onChange={(e) => update(i, { hsnCode: e.target.value.replace(/\D/g, "") })} />
+                  <input aria-label="HSN code" {...bad(i, "hsnCode")} maxLength={8} className={cn(cell, "w-24")} inputMode="numeric" value={r.hsnCode} onChange={(e) => update(i, { hsnCode: e.target.value.replace(/\D/g, "") })} />
                 </td>
                 <td className="p-2">
                   <select aria-label="GST rate" className={cn(cell, "w-20")} value={r.gstRatePercent} onChange={(e) => update(i, { gstRatePercent: Number(e.target.value) })}>
@@ -215,7 +273,7 @@ export function VariantEditor(props: {
                         ))}
                     </select>
                     {r.stockChoice === "new-pack" && (
-                      <input aria-label="Opening stock (packs)" title="Opening stock (packs)" className={cn(cell, "w-20")} inputMode="numeric" value={r.initialQty} onChange={(e) => update(i, { initialQty: Number(e.target.value.replace(/\D/g, "")) })} />
+                      <input aria-label="Opening stock (packs)" title="Opening stock (packs)" {...bad(i, "initialQty")} maxLength={6} className={cn(cell, "w-20")} inputMode="numeric" value={r.initialQty} onChange={(e) => update(i, { initialQty: Number(e.target.value.replace(/\D/g, "")) })} />
                     )}
                   </div>
                 </td>
@@ -225,8 +283,21 @@ export function VariantEditor(props: {
         </table>
       </div>
       <p className="text-xs text-muted">
-        Net g is the weight printed on the pack (used for price per 100 g and loose-stock deduction). Packed g includes the pouch/jar, used for courier rates. Confirm HSN codes and GST rates with your CA. To create a loose-stock pool, go to Inventory.
+        {unit === "ml" ? "Net ml is the volume printed on the bottle or tin (used for price per 100 ml)." : "Net g is the weight printed on the pack (used for price per 100 g and loose-stock deduction)."} Packed g is the weight of the whole pack, including the pouch, jar, bottle or tin, used for courier rates. Products sold by volume are set under Details › Sold by. Confirm HSN codes and GST rates with your CA. To create a loose-stock pool, go to Inventory.
       </p>
+      {problems.list.length > 0 && (
+        <Notice tone="error">
+          <p className="font-semibold">
+            Fix {problems.list.length === 1 ? "this problem" : `these ${problems.list.length} problems`} before saving (highlighted in the table):
+          </p>
+          <ul className="mt-1 list-disc pl-5">
+            {problems.list.slice(0, 8).map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+            {problems.list.length > 8 && <li>…and {problems.list.length - 8} more</li>}
+          </ul>
+        </Notice>
+      )}
       <div className="flex items-center gap-3">
         <button type="button" onClick={save} disabled={pending || optionsChanged} className="rounded-full bg-forest px-6 py-2.5 font-semibold text-ivory disabled:opacity-50">
           {pending ? "Saving…" : "Save variants"}

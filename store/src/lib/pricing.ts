@@ -121,7 +121,10 @@ export type PricedLine = PricingLine & {
 export type PriceBreakdown = {
   lines: PricedLine[];
   subtotalPaise: number;
+  /** All discounts: coupon plus loyalty points. */
   discountPaise: number;
+  couponDiscountPaise: number;
+  pointsDiscountPaise: number;
   itemsTotalPaise: number;
   freeShipping: boolean;
   freeShippingReason: "COUPON" | "THRESHOLD" | null;
@@ -140,10 +143,17 @@ export function priceOrder(
   coupon: { rule: CouponRule; result: Extract<CouponResult, { ok: true }> } | null,
   shipping: ShippingInput,
   cod: CodInput,
+  /** Loyalty points used, in rupee value. Applied after the coupon, across all items. */
+  pointsDiscountPaise = 0,
 ): PriceBreakdown {
   const subtotals = lines.map(lineSubtotal);
-  const discount = coupon ? coupon.result.discountPaise : 0;
-  const allocation = coupon ? allocateDiscount(subtotals, coupon.result.eligible, discount) : subtotals.map(() => 0);
+  const couponDiscount = coupon ? coupon.result.discountPaise : 0;
+  const couponAllocation = coupon ? allocateDiscount(subtotals, coupon.result.eligible, couponDiscount) : subtotals.map(() => 0);
+  const afterCoupon = subtotals.map((s, i) => s - couponAllocation[i]);
+  const points = Math.max(0, Math.min(Math.floor(pointsDiscountPaise), afterCoupon.reduce((a, b) => a + b, 0)));
+  const pointsAllocation = allocateDiscount(afterCoupon, afterCoupon.map(() => true), points);
+  const allocation = subtotals.map((_, i) => couponAllocation[i] + pointsAllocation[i]);
+  const discount = couponDiscount + points;
 
   const priced: PricedLine[] = lines.map((line, i) => {
     const total = subtotals[i] - allocation[i];
@@ -156,7 +166,9 @@ export function priceOrder(
 
   const couponFree = coupon?.result.freeShipping ?? false;
   const threshold = shipping.freeShippingThresholdPaise;
-  const thresholdFree = threshold !== null && itemsTotal >= threshold;
+  // Paying with points shouldn't cost the customer their free shipping, so the threshold uses the total before points.
+  const thresholdBase = subtotal - couponDiscount;
+  const thresholdFree = threshold !== null && thresholdBase >= threshold;
   const freeShipping = couponFree || thresholdFree;
 
   let shippingPaise: number | null;
@@ -184,6 +196,8 @@ export function priceOrder(
     lines: priced,
     subtotalPaise: subtotal,
     discountPaise: discount,
+    couponDiscountPaise: couponDiscount,
+    pointsDiscountPaise: points,
     itemsTotalPaise: itemsTotal,
     freeShipping,
     freeShippingReason: couponFree ? "COUPON" : thresholdFree ? "THRESHOLD" : null,
@@ -192,6 +206,6 @@ export function priceOrder(
     totalPaise: total,
     taxPaise: tax,
     chargesGstRateBp: chargesRate,
-    freeShippingGapPaise: threshold !== null && !freeShipping ? threshold - itemsTotal : null,
+    freeShippingGapPaise: threshold !== null && !freeShipping ? threshold - thresholdBase : null,
   };
 }

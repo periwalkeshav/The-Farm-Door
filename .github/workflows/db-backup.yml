@@ -1,0 +1,68 @@
+# Nightly, encrypted backup of the live database.
+#
+# Set these repository secrets (GitHub › Settings › Secrets and variables › Actions):
+#   BACKUP_DATABASE_URL   connection string for the live database (ideally a read-only user)
+#   BACKUP_PASSPHRASE     long random passphrase; keep a copy in your password manager.
+#                         Without it the backups can't be opened.
+# Optional, to keep backups in S3-compatible storage (Cloudflare R2 and Backblaze B2 have free tiers):
+#   BACKUP_S3_BUCKET, BACKUP_S3_ENDPOINT, BACKUP_S3_ACCESS_KEY_ID, BACKUP_S3_SECRET_ACCESS_KEY
+# Without a bucket, each backup is kept as a workflow artifact for 7 days.
+#
+# Restore: gpg --decrypt farmdoor-YYYY-MM-DD.dump.gpg > farmdoor.dump
+#          pg_restore --no-owner --dbname "<empty database URL>" farmdoor.dump
+name: Nightly database backup
+
+on:
+  schedule:
+    - cron: "30 21 * * *" # 03:00 IST
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+    steps:
+      - name: Check the secrets are set
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::Add the BACKUP_DATABASE_URL and BACKUP_PASSPHRASE repository secrets."
+            exit 1
+          fi
+
+      - name: Dump the database
+        run: |
+          # The PostgreSQL 17 client can back up servers up to version 17.
+          docker run --rm -e DATABASE_URL postgres:17 sh -c 'pg_dump "$DATABASE_URL" --format=custom --no-owner' > farmdoor.dump
+          test -s farmdoor.dump
+          echo "Backup size: $(du -h farmdoor.dump | cut -f1)"
+
+      - name: Encrypt
+        run: |
+          NAME="farmdoor-$(TZ=Asia/Kolkata date +%Y-%m-%d).dump.gpg"
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" --symmetric --cipher-algo AES256 --output "$NAME" farmdoor.dump
+          rm farmdoor.dump
+          echo "BACKUP_FILE=$NAME" >> "$GITHUB_ENV"
+
+      - name: Upload to storage
+        if: env.S3_BUCKET != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          S3_ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
+        run: aws s3 cp "$BACKUP_FILE" "s3://$S3_BUCKET/$BACKUP_FILE" --endpoint-url "$S3_ENDPOINT"
+
+      - name: Keep as a workflow artifact
+        if: env.S3_BUCKET == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_FILE }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 7

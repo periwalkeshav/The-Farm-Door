@@ -8,6 +8,7 @@ import { isValidPincode, normalizeEmail } from "@/lib/india";
 import { priceOrder, type PriceBreakdown } from "@/lib/pricing";
 import { cartIssues, cartWeightGrams, loadCartLines, toPricingLines, type CartIssue, type CartLine } from "./cart";
 import { checkCoupon, type CouponCheck } from "./coupons";
+import { usablePoints } from "./loyalty";
 import { readSettings, type SettingsValue } from "./settings";
 import { parcelWeight, quoteShipping, type ShippingQuote } from "./shipping";
 
@@ -25,13 +26,15 @@ export type CheckoutSummary = {
   paymentMethod: PaymentChoice;
   cod: { offered: boolean; available: boolean; reason: string | null; feePaise: number };
   settings: { shipping: SettingsValue<"shipping">; cod: SettingsValue<"cod"> };
+  /** Loyalty points this (signed-in) customer can use here, and whether they're being used. */
+  points: { enabled: boolean; balance: number; usable: number; valuePaise: number; applied: boolean; minToRedeem: number };
 };
 
 export async function summarizeCart(
   db: DbOrTx,
-  input: { cartId: string; couponCode: string | null; pincode: string | null; paymentMethod: PaymentChoice; email: string | null },
+  input: { cartId: string; couponCode: string | null; pincode: string | null; paymentMethod: PaymentChoice; email: string | null; customerId?: number | null; usePoints?: boolean },
 ): Promise<CheckoutSummary> {
-  const [shipping, cod] = await Promise.all([readSettings(db, "shipping"), readSettings(db, "cod")]);
+  const [shipping, cod, loyalty] = await Promise.all([readSettings(db, "shipping"), readSettings(db, "cod"), readSettings(db, "loyalty")]);
   const lines = await loadCartLines(db, input.cartId);
   const issues = cartIssues(lines);
   const pricingLines = toPricingLines(lines);
@@ -46,6 +49,9 @@ export async function summarizeCart(
   // COD rules that don't depend on the courier.
   const pincodeBlocked = pincode !== null && cod.blockedPincodes.includes(pincode);
   const prepaidPreview = priceOrder(pricingLines, applied, { quotedCostPaise: 0, freeShippingThresholdPaise: shipping.freeShippingThresholdPaise }, { selected: false, feePaise: 0 });
+  const pts = await usablePoints(db, input.customerId ?? null, prepaidPreview.itemsTotalPaise, loyalty);
+  const pointsUsed = input.usePoints ? pts.usable : 0;
+  const pointsDiscount = pointsUsed * loyalty.pointValuePaise;
   let codReason: string | null = null;
   if (!cod.enabled) codReason = "Cash on delivery isn't available right now.";
   else if (pincodeBlocked) codReason = "Cash on delivery isn't available for this pincode.";
@@ -73,6 +79,7 @@ export async function summarizeCart(
       handlingFeePaise: shipping.handlingFeePaise,
     },
     { selected: paymentMethod === "COD", feePaise: cod.feePaise },
+    pointsDiscount,
   );
 
   // The COD limit applies to the final amount including shipping.
@@ -95,5 +102,6 @@ export async function summarizeCart(
     paymentMethod,
     cod: { offered: cod.enabled, available: codReason === null, reason: codReason, feePaise: cod.feePaise },
     settings: { shipping, cod },
+    points: { enabled: loyalty.pointsEnabled && !!input.customerId, balance: pts.balance, usable: pts.usable, valuePaise: pts.valuePaise, applied: pointsUsed > 0, minToRedeem: loyalty.minPointsToRedeem },
   };
 }

@@ -12,14 +12,15 @@
   --color-muted: #6a6158;
   --color-line: #ddd3c1;
   --color-saffron: #e3a33b;
-  --color-saffron-deep: #a8641a;
+  --color-saffron-deep: #965818; /* darkest enough for small text on ivory, paper and sand (WCAG AA) */
   --color-chilli: #b5412c;
   --color-chilli-soft: #f6e1da;
   --color-sage: #8fa77a;
   --color-sage-soft: #e5ecdc;
 
-  --font-display: var(--font-fraunces), Georgia, serif;
-  --font-sans: var(--font-manrope), system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Devanagari fonts come second: they only cover Hindi letters, which the Latin fonts lack. */
+  --font-display: var(--font-fraunces), var(--font-deva-serif), Georgia, serif;
+  --font-sans: var(--font-manrope), var(--font-deva-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --radius-card: 1.25rem;
 }
@@ -58,11 +59,19 @@
   .field {
     @apply w-full rounded-xl border border-line bg-paper px-3.5 py-2.5 text-ink placeholder:text-[#9a8f82] transition outline-none focus:border-forest focus:ring-4 focus:ring-saffron/25 disabled:opacity-60;
   }
+  .field[aria-invalid="true"] {
+    @apply border-chilli bg-chilli-soft/20 focus:border-chilli focus:ring-chilli/20;
+  }
   .label {
     @apply mb-1.5 block text-sm font-semibold text-forest;
   }
   .card {
     @apply rounded-[var(--radius-card)] border border-line bg-paper;
+  }
+  /* Outlined numerals for the ranked bestsellers row. */
+  .rank-number {
+    color: #f0dfbf;
+    -webkit-text-stroke: 1.5px var(--color-saffron-deep);
   }
   .prose-shop p {
     @apply mb-3 leading-relaxed text-ink/90;
@@ -72,5 +81,190 @@
   }
   .prose-shop ul {
     @apply mb-3 list-disc space-y-1 pl-5;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Motion: banners, ticker, floating spices, scroll-in                  */
+/* Everything stops for visitors who ask their device for less motion, */
+/* and when the "Pause animations" button is pressed (html[data-motion="paused"]). */
+/* ------------------------------------------------------------------ */
+
+@keyframes tfd-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes tfd-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--tilt, 0deg));
+  }
+  50% {
+    transform: translateY(-10px) rotate(calc(var(--tilt, 0deg) + 6deg));
+  }
+}
+@keyframes tfd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes tfd-drive {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes tfd-road {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+@keyframes tfd-steam {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+/* The van drives one way, fading in at the start of the road and out at the end. */
+@keyframes tfd-travel {
+  0% {
+    left: 0%;
+    opacity: 0;
+  }
+  8%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    left: calc(100% - 3.5rem);
+    opacity: 0;
+  }
+}
+@keyframes tfd-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes tfd-bump {
+  30% {
+    transform: scale(1.18);
+  }
+  60% {
+    transform: scale(0.94);
+  }
+}
+@keyframes tfd-rise {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@layer components {
+  .ticker {
+    mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent);
+  }
+  .ticker-track {
+    animation: tfd-marquee var(--ticker-duration, 40s) linear infinite;
+  }
+  .ticker:hover .ticker-track,
+  .ticker:focus-within .ticker-track {
+    animation-play-state: paused;
+  }
+  .float {
+    animation: tfd-float var(--float-duration, 6s) ease-in-out var(--float-delay, 0s) infinite;
+  }
+  .spin-slow {
+    animation: tfd-spin 40s linear infinite;
+  }
+  .drive {
+    animation: tfd-drive 0.6s ease-in-out infinite;
+  }
+  .road {
+    stroke-dasharray: 14 26;
+    animation: tfd-road 0.8s linear infinite;
+  }
+  .steam path,
+  svg .steam {
+    animation: tfd-steam 2.6s ease-out infinite;
+  }
+  .travel {
+    animation: tfd-travel 9s linear infinite;
+  }
+  .cart-bump {
+    animation: tfd-bump 0.5s ease-out;
+  }
+  .slide-progress {
+    transform-origin: left;
+    animation: tfd-progress var(--slide-duration, 7s) linear both;
+  }
+  .slide-progress[data-paused="true"] {
+    animation-play-state: paused;
+  }
+}
+
+/* Sections rise into view as they scroll in (browsers with scroll-driven animations; others just show them). */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: tfd-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 60%;
+    }
+  }
+}
+
+html[data-motion="paused"] *,
+html[data-motion="paused"] *::before,
+html[data-motion="paused"] *::after {
+  animation-play-state: paused !important;
+}
+/* A paused scroll-in animation could freeze a section half-faded, so those are switched off instead. */
+html[data-motion="paused"] .reveal {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track,
+  .float,
+  .spin-slow,
+  .drive,
+  .road,
+  .steam path,
+  svg .steam,
+  .travel {
+    animation: none !important;
+  }
+  .ticker {
+    mask-image: none;
+  }
+  .ticker-track {
+    width: auto !important;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .ticker-copy {
+    display: none !important;
   }
 }

@@ -16,6 +16,7 @@ export function InvoiceDocument({ title, number, date, orderNumber, snapshot }: 
           <p>
             State: {s.seller.state} ({s.seller.stateCode})
           </p>
+          {s.seller.cin && <p>CIN: {s.seller.cin}</p>}
           {s.seller.fssaiNumber && <p>FSSAI Lic. No.: {s.seller.fssaiNumber}</p>}
         </div>
         <div className="text-right">

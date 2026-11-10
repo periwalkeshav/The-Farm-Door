@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useRef } from "react";
+import { useI18n } from "@/i18n/client";
+import { SearchBox } from "./search-box";
 
 export function ListingControls(props: {
   basePath: string;
@@ -10,13 +12,16 @@ export function ListingControls(props: {
   inStockOnly: boolean;
   sorts: { value: string; label: string }[];
   autoFocusSearch?: boolean;
+  /** Filters to keep when searching or sorting (e.g. the chosen group on a category page). */
+  keep?: Record<string, string>;
 }) {
   const router = useRouter();
+  const { lang, t } = useI18n();
   const formRef = useRef<HTMLFormElement>(null);
 
   function submit() {
     const data = new FormData(formRef.current!);
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(props.keep);
     const q = String(data.get("q") ?? "").trim();
     if (q) params.set("q", q);
     const sort = String(data.get("sort") ?? "featured");
@@ -29,28 +34,37 @@ export function ListingControls(props: {
     <form
       ref={formRef}
       role="search"
+      aria-label={t("Search and sort these products")}
       className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
       }}
     >
+      {Object.entries(props.keep ?? {}).map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))}
       <div className="flex flex-1 gap-2">
-        <label htmlFor="listing-q" className="sr-only">
-          Search
-        </label>
-        <input id="listing-q" name="q" type="search" defaultValue={props.q} placeholder="Search turmeric, jeera, garam masala…" autoFocus={props.autoFocusSearch} className="field flex-1" />
+        <SearchBox
+          label={t("Search")}
+          defaultValue={props.q}
+          placeholder={t("Search turmeric, haldi, jeera, garam masala…")}
+          hints={lang === "hi" ? ["हल्दी", "जीरा", "तूर दाल", "सरसों का तेल", "गरम मसाला", "बासमती"] : ["turmeric or haldi", "jeera", "toor dal", "mustard oil", "garam masala", "basmati"]}
+          autoFocus={props.autoFocusSearch}
+          className="flex-1"
+          inputClassName="field"
+        />
         <button type="submit" className="rounded-xl bg-forest px-4 font-semibold text-ivory">
-          Search
+          {t("Search")}
         </button>
       </div>
       <div className="flex items-center gap-3">
         <label className="flex items-center gap-2 text-sm font-semibold whitespace-nowrap text-forest">
           <input type="checkbox" name="instock" defaultChecked={props.inStockOnly} onChange={submit} className="size-4 accent-forest" />
-          In stock only
+          {t("In stock only")}
         </label>
         <label htmlFor="listing-sort" className="sr-only">
-          Sort by
+          {t("Sort by")}
         </label>
         <select id="listing-sort" name="sort" defaultValue={props.sort} onChange={submit} className="field w-auto py-2">
           {props.sorts.map((s) => (

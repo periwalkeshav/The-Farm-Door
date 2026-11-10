@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { simulatePaymentAction, verifyPaymentAction, type VerifyResult } from "@/actions/checkout";
 import type { PaymentStart } from "@/server/orders/place";
+import { useI18n } from "@/i18n/client";
 
 type RazorpayResponse = { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
 type RazorpayInstance = { open: () => void; on: (event: string, cb: (r: { error?: { description?: string } }) => void) => void };
@@ -69,6 +70,7 @@ export async function openRazorpay(input: LaunchInput): Promise<VerifyResult | "
 
 /** TEST MODE ONLY: stands in for Razorpay Checkout when payments are simulated. */
 export function SimulatedPaymentDialog({ input, onDone }: { input: LaunchInput; onDone: (r: VerifyResult | "dismissed") => void }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const run = async (outcome: "captured" | "failed") => {
     setBusy(true);
@@ -77,22 +79,22 @@ export function SimulatedPaymentDialog({ input, onDone }: { input: LaunchInput; 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-4" role="dialog" aria-modal="true" aria-labelledby="sim-title">
       <div className="w-full max-w-sm rounded-2xl bg-paper p-6 shadow-2xl">
-        <p className="mb-1 text-xs font-bold tracking-widest text-chilli uppercase">Test mode</p>
+        <p className="mb-1 text-xs font-bold tracking-widest text-chilli uppercase">{t("Test mode")}</p>
         <h2 id="sim-title" className="text-2xl">
-          Simulated payment
+          {t("Simulated payment")}
         </h2>
         <p className="mt-2 text-sm text-muted">
-          Razorpay isn&apos;t connected yet, so no real payment happens. Choose an outcome to test the order flow for ₹{(input.payment.amountPaise / 100).toFixed(2)}.
+          {t("Razorpay isn't connected yet, so no real payment happens. Choose an outcome to test the order flow for {amount}.", { amount: `₹${(input.payment.amountPaise / 100).toFixed(2)}` })}
         </p>
         <div className="mt-5 grid gap-2">
           <button type="button" disabled={busy} onClick={() => run("captured")} className="rounded-full bg-forest px-5 py-3 font-bold text-ivory disabled:opacity-60">
-            Simulate successful payment
+            {t("Simulate successful payment")}
           </button>
           <button type="button" disabled={busy} onClick={() => run("failed")} className="rounded-full border border-chilli/40 px-5 py-3 font-bold text-chilli disabled:opacity-60">
-            Simulate failed payment
+            {t("Simulate failed payment")}
           </button>
           <button type="button" disabled={busy} onClick={() => onDone("dismissed")} className="px-5 py-2 text-sm font-semibold text-muted underline">
-            Close without paying
+            {t("Close without paying")}
           </button>
         </div>
       </div>

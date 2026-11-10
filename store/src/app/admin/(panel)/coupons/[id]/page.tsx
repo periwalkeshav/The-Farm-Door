@@ -71,6 +71,7 @@ async function Coupon({ params, searchParams }: Pick<PageProps<"/admin/coupons/[
             usageLimitTotal: c.usageLimitTotal ? String(c.usageLimitTotal) : "",
             usageLimitPerCustomer: c.usageLimitPerCustomer ? String(c.usageLimitPerCustomer) : "",
             isActive: c.isActive,
+            isFeatured: c.isFeatured,
           }}
           products={prods}
           categories={cats}

@@ -6,6 +6,7 @@ import { staffUsers } from "@/db/schema";
 import { hashPassword } from "@/lib/crypto";
 import { normalizeEmail } from "@/lib/india";
 import { logAudit } from "./audit";
+import { deleteRecoveryCodes } from "./auth/recovery-codes";
 import { deleteAllSessions } from "./auth/sessions";
 import type { StaffRole } from "./permissions";
 
@@ -73,8 +74,10 @@ export async function resetPassword(db: Database, staffId: number, byStaffId: nu
   return password;
 }
 
-export async function resetTwoFactor(db: Database, staffId: number, byStaffId: number) {
+/** Turns off 2-step verification (it's set up again at next sign-in) and cancels backup codes. byStaffId is null from the command line. */
+export async function resetTwoFactor(db: Database, staffId: number, byStaffId: number | null) {
   await db.update(staffUsers).set({ totpEnabled: false, totpSecretEnc: null }).where(eq(staffUsers.id, staffId));
+  await deleteRecoveryCodes(db, staffId);
   await deleteAllSessions(db, "STAFF", staffId);
   await logAudit(db, { staffUserId: byStaffId, action: "staff.reset_2fa", entityType: "staff", entityId: staffId });
 }

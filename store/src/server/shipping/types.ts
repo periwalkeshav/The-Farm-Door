@@ -96,4 +96,6 @@ export interface ShippingProvider {
   track(awb: string): Promise<TrackingResult>;
   cancelShipment(awb: string): Promise<void>;
   postcodeDetails(pincode: string): Promise<{ city: string; state: string } | null>;
+  /** One PDF with the labels for several shipments, or null when the provider has no labels (simulation). */
+  combinedLabel(providerShipmentIds: string[]): Promise<string | null>;
 }

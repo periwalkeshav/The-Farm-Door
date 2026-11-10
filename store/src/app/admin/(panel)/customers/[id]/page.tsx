@@ -3,6 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { AnonymiseButton } from "@/components/admin/customer-actions";
+import { AdjustPointsForm } from "@/components/admin/points-form";
+import { POINT_REASONS, pointsBalance, pointsHistory } from "@/server/loyalty";
+import { readSettings } from "@/server/settings";
 import { Badge, DataTable, PageHeader, Panel, StatTile, statusTone, Td } from "@/components/admin/ui";
 import { requireStaff } from "@/data/session";
 import { getDb } from "@/db";
@@ -28,6 +31,8 @@ async function Customer({ params }: { params: PageProps<"/admin/customers/[id]">
   const db = getDb();
   const [c] = await db.select().from(customers).where(eq(customers.id, id));
   if (!c) notFound();
+  const loyalty = await readSettings(db, "loyalty");
+  const [balance, history] = loyalty.pointsEnabled ? await Promise.all([pointsBalance(db, c.id), pointsHistory(db, c.id, 15)]) : [0, []];
   const [orderRows, saved, theirReviews] = await Promise.all([
     db.select().from(orders).where(eq(orders.customerId, id)).orderBy(desc(orders.placedAt)),
     db.select().from(addresses).where(eq(addresses.customerId, id)),
@@ -75,6 +80,27 @@ async function Customer({ params }: { params: PageProps<"/admin/customers/[id]">
           </DataTable>
         </div>
         <div className="space-y-6">
+          {loyalty.pointsEnabled && (
+            <Panel title={`Loyalty points: ${balance}`}>
+              {history.length > 0 ? (
+                <ul className="mb-4 space-y-1 text-sm">
+                  {history.map((h) => (
+                    <li key={h.id} className="flex justify-between gap-3">
+                      <span className="text-muted">
+                        {POINT_REASONS[h.reason]}
+                        {h.orderNumber ? ` #${h.orderNumber}` : ""}
+                        {h.note ? ` · ${h.note}` : ""}
+                      </span>
+                      <span className={h.points > 0 ? "font-semibold text-forest" : "font-semibold text-chilli"}>{h.points > 0 ? `+${h.points}` : h.points}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mb-4 text-sm text-muted">No points yet.</p>
+              )}
+              {can(staff.role, "settings.manage") && <AdjustPointsForm customerId={c.id} />}
+            </Panel>
+          )}
           <Panel title="Saved addresses">
             {saved.length ? (
               <ul className="space-y-3 text-sm">

@@ -9,16 +9,19 @@
  */
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database, DbOrTx } from "@/db";
-import { orders, payments, refunds, shipmentEvents, shipments } from "@/db/schema";
+import { invoices, orders, payments, refunds, shipmentEvents, shipments } from "@/db/schema";
 import { sha256Hex, safeEqual } from "@/lib/crypto";
 import { logAudit } from "../audit";
 import { releaseCouponUse } from "../coupons";
+import { returnRedeemedPoints, reversePointsForRefund, rewardDeliveredOrder } from "../loyalty";
+import { notifyWhatsApp } from "../whatsapp";
 import { sendEmail } from "../email/send";
 import { orderCancelledEmail, orderDeliveredEmail, orderShippedEmail, refundEmail } from "../email/templates";
 import { commitStock, releaseStock, returnStock } from "../inventory";
 import { readSettings } from "../settings";
 import { shippingProvider, ShipmentStepError, type NormalizedShipmentStatus, type TrackingEvent } from "../shipping";
 import { addOrderEvent, checkOrderToken, emailOrder, loadOrderItems, lockOrder, OrderActionError, orderNeeds, orderUrl, type OrderRow } from "./common";
+import { invoiceFilename, invoicePdf } from "./invoice-pdf";
 import { ensureInvoice, issueCreditNote } from "./invoices";
 import { notifyOrderConfirmed, recomputeRefundStatus, refundViaGateway } from "./payment";
 
@@ -86,6 +89,7 @@ export async function cancelOrder(db: Database, orderId: number, by: { customerI
     if (order.stockState === "RESERVED") await releaseStock(tx, needs, order.id, "Order cancelled");
     if (order.stockState === "COMMITTED") await returnStock(tx, needs, order.id, { staffUserId: by.staffUserId ?? null, note: "Order cancelled before dispatch" });
     await releaseCouponUse(tx, order.id);
+    await returnRedeemedPoints(tx, order);
     if (activeShipment) await tx.update(shipments).set({ isActive: false, status: "CANCELLED" }).where(eq(shipments.id, activeShipment.id));
 
     const wasPaid = order.paymentStatus === "PAID";
@@ -138,6 +142,19 @@ export async function cancelOrder(db: Database, orderId: number, by: { customerI
 
 /* ---------------- Packing & courier booking ---------------- */
 
+/** The order's tax invoice as a PDF attachment (none for orders without one, e.g. free replacements). */
+async function invoiceAttachment(db: DbOrTx, order: OrderRow) {
+  const [invoice] = await db.select().from(invoices).where(eq(invoices.orderId, order.id));
+  if (!invoice) return [];
+  const content = await invoicePdf({ title: "Tax invoice", number: invoice.invoiceNumber, date: invoice.issuedAt, orderNumber: order.orderNumber, snapshot: invoice.snapshot });
+  return [{ filename: invoiceFilename("invoice", invoice.invoiceNumber), content, contentType: "application/pdf" }];
+}
+
+async function originalInvoice(tx: DbOrTx, orderId: number) {
+  const [row] = await tx.select({ invoiceNumber: invoices.invoiceNumber }).from(invoices).where(eq(invoices.orderId, orderId));
+  return row ?? null;
+}
+
 export type PackResult = { ok: true; order: OrderRow; awb: string; labelUrl: string } | { ok: false; message: string };
 
 export async function packOrder(db: Database, orderId: number, staffUserId: number): Promise<PackResult> {
@@ -145,11 +162,15 @@ export async function packOrder(db: Database, orderId: number, staffUserId: numb
     const order = await lockOrder(tx, { id: orderId });
     if (!order) throw new OrderActionError("Order not found.");
     if (order.status !== "CONFIRMED") throw new OrderActionError("Only confirmed orders can be packed.");
-    const invoice = await ensureInvoice(tx, order);
+    // A free replacement isn't a sale, so it gets no invoice; the courier is given the original order's.
+    const invoice = order.replacementForOrderId ? await originalInvoice(tx, order.replacementForOrderId) : await ensureInvoice(tx, order);
     const [existing] = await tx.select().from(shipments).where(and(eq(shipments.orderId, order.id), eq(shipments.isActive, true)));
     return { order, invoice, existing: existing ?? null, items: await loadOrderItems(tx, order.id) };
   });
   const { order, invoice, existing, items } = prepared;
+  // Couriers need a declared value; for a ₹0 replacement that's the goods' MRP.
+  const declared = (i: (typeof items)[number]) => (order.replacementForOrderId ? i.mrpPaise : i.unitPricePaise);
+  const declaredTotal = order.replacementForOrderId ? items.reduce((s, i) => s + i.mrpPaise * i.quantity, 0) : null;
   const shipping = await readSettings(db, "shipping");
   const provider = shippingProvider();
 
@@ -160,18 +181,18 @@ export async function packOrder(db: Database, orderId: number, staffUserId: numb
       orderDate: order.placedAt,
       paymentMethod: order.paymentMethod,
       customer: { name: order.shipName, phone: order.shipPhone, email: order.email, line1: order.shipLine1, line2: [order.shipLine2, order.shipLandmark].filter(Boolean).join(", "), city: order.shipCity, state: order.shipState, pincode: order.shipPincode },
-      items: items.map((i) => ({ name: `${i.productName} ${i.variantTitle}`, sku: i.sku, units: i.quantity, unitPricePaise: i.unitPricePaise, gstRateBp: i.gstRateBp, hsn: i.hsnCode })),
-      subtotalPaise: order.subtotalPaise,
+      items: items.map((i) => ({ name: `${i.productName} ${i.variantTitle}`, sku: i.sku, units: i.quantity, unitPricePaise: declared(i), gstRateBp: i.gstRateBp, hsn: i.hsnCode })),
+      subtotalPaise: declaredTotal ?? order.subtotalPaise,
       discountPaise: order.discountPaise,
       shippingPaise: order.shippingPaise,
       codFeePaise: order.codFeePaise,
-      totalPaise: order.totalPaise,
+      totalPaise: declaredTotal ?? order.totalPaise,
       weightGrams: order.totalWeightGrams,
       lengthCm: shipping.boxLengthCm,
       breadthCm: shipping.boxBreadthCm,
       heightCm: shipping.boxHeightCm,
       customerGstin: order.billingGstin,
-      invoiceNumber: invoice.invoiceNumber,
+      invoiceNumber: invoice?.invoiceNumber ?? order.orderNumber,
       courierId: order.shippingQuote?.provider === provider.name ? order.shippingQuote.courierId : null,
       existing: existing ? { providerOrderId: existing.providerOrderId, providerShipmentId: existing.providerShipmentId, awb: existing.awb } : undefined,
     });
@@ -220,7 +241,7 @@ export async function markShippedManually(db: Database, orderId: number, staffUs
     const o = await lockOrder(tx, { id: orderId });
     if (!o) throw new OrderActionError("Order not found.");
     if (o.status !== "CONFIRMED" && o.status !== "PACKED") throw new OrderActionError("Only confirmed or packed orders can be marked as shipped.");
-    await ensureInvoice(tx, o);
+    if (!o.replacementForOrderId) await ensureInvoice(tx, o);
     await tx.update(shipments).set({ isActive: false }).where(eq(shipments.orderId, o.id));
     await tx.insert(shipments).values({ orderId: o.id, provider: "manual", awb: info.awb || null, courierName: info.courierName, trackingUrl: info.trackingUrl, status: "IN_TRANSIT" });
     const [updated] = await tx
@@ -232,12 +253,15 @@ export async function markShippedManually(db: Database, orderId: number, staffUs
     await logAudit(tx, { staffUserId, action: "order.ship_manual", entityType: "order", entityId: o.id, data: info });
     return updated;
   });
+  const attachments = await invoiceAttachment(db, order);
   await sendEmail(db, {
     to: order.email,
-    ...orderShippedEmail(await emailOrder(db, order), { courier: info.courierName, awb: info.awb, trackingUrl: info.trackingUrl, orderUrl: orderUrl(order) }),
+    ...orderShippedEmail(await emailOrder(db, order), { courier: info.courierName, awb: info.awb, trackingUrl: info.trackingUrl, orderUrl: orderUrl(order), invoiceAttached: attachments.length > 0 }),
     template: "order-shipped",
     orderId: order.id,
+    attachments,
   });
+  await notifyWhatsApp(db, order, "order_shipped", { courier: info.courierName, link: info.trackingUrl || orderUrl(order) });
   return order;
 }
 
@@ -297,21 +321,26 @@ export async function applyShipmentUpdate(
       .where(eq(orders.id, order.id))
       .returning();
     await addOrderEvent(tx, order.id, `shipment.${update.status.toLowerCase()}`, PUBLIC_MESSAGES[next] ?? next, { isPublic: true, actor: update.actor ?? "courier" });
+    if (next === "DELIVERED") await rewardDeliveredOrder(tx, updated);
     return { order: updated, shipment, from: order.status };
   });
 
   if (changed) {
     const { order, shipment } = changed;
     if (order.status === "SHIPPED" && changed.from !== "SHIPPED") {
+      const attachments = await invoiceAttachment(db, order);
       await sendEmail(db, {
         to: order.email,
-        ...orderShippedEmail(await emailOrder(db, order), { courier: shipment.courierName, awb: shipment.awb ?? "", trackingUrl: shipment.trackingUrl, orderUrl: orderUrl(order) }),
+        ...orderShippedEmail(await emailOrder(db, order), { courier: shipment.courierName, awb: shipment.awb ?? "", trackingUrl: shipment.trackingUrl, orderUrl: orderUrl(order), invoiceAttached: attachments.length > 0 }),
         template: "order-shipped",
         orderId: order.id,
+        attachments,
       });
+      await notifyWhatsApp(db, order, "order_shipped", { courier: shipment.courierName, link: shipment.trackingUrl || orderUrl(order) });
     }
     if (order.status === "DELIVERED") {
       await sendEmail(db, { to: order.email, ...orderDeliveredEmail(await emailOrder(db, order), orderUrl(order)), template: "order-delivered", orderId: order.id });
+      await notifyWhatsApp(db, order, "order_delivered");
     }
   }
   return changed?.order ?? null;
@@ -417,10 +446,15 @@ export async function refundOrder(
     });
   }
 
-  await db.transaction(async (tx) => {
+  const note = await db.transaction(async (tx) => {
     const [latest] = await tx.select({ id: refunds.id }).from(refunds).where(eq(refunds.orderId, order.id)).orderBy(desc(refunds.id)).limit(1);
-    await issueCreditNote(tx, order.id, latest?.id ?? null, input.amountPaise);
+    const issued = await issueCreditNote(tx, order.id, latest?.id ?? null, input.amountPaise);
+    await reversePointsForRefund(tx, order, input.amountPaise);
     await logAudit(tx, { staffUserId: input.staffUserId, action: "order.refund", entityType: "order", entityId: order.id, data: { amountPaise: input.amountPaise, mode: input.mode, reason: input.reason } });
+    return issued;
   });
-  await sendEmail(db, { to: order.email, ...refundEmail(await emailOrder(db, order), input.amountPaise, input.mode), template: "refund", orderId: order.id });
+  const attachments = note
+    ? [{ filename: invoiceFilename("credit-note", note.noteNumber), content: await invoicePdf({ title: "Credit note", number: note.noteNumber, date: note.issuedAt, orderNumber: order.orderNumber, snapshot: note.snapshot }), contentType: "application/pdf" }]
+    : [];
+  await sendEmail(db, { to: order.email, ...refundEmail(await emailOrder(db, order), input.amountPaise, input.mode, attachments.length > 0), template: "refund", orderId: order.id, attachments });
 }

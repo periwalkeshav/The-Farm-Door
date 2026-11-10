@@ -2,6 +2,8 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { moderateReviewAction, saveCouponAction, type MarketingResult } from "@/actions/admin/marketing";
+import { Field, FieldError, useForm } from "@/components/form";
+import { couponFormSchema } from "@/lib/form-schemas";
 
 type CouponValues = {
   id: number | null;
@@ -19,83 +21,56 @@ type CouponValues = {
   usageLimitTotal: string;
   usageLimitPerCustomer: string;
   isActive: boolean;
+  isFeatured: boolean;
 };
 
 export function CouponForm({ coupon, products, categories }: { coupon: CouponValues; products: { id: number; name: string }[]; categories: { id: number; name: string }[] }) {
   const [state, action, pending] = useActionState<MarketingResult, FormData>(saveCouponAction.bind(null, coupon.id), null);
+  const f = useForm({ schema: couponFormSchema, action, state });
   const [type, setType] = useState(coupon.type);
   const [scope, setScope] = useState(coupon.scope);
+  const hasFieldErrors = Object.keys(f.errors).length > 0;
   return (
-    <form action={action} className="space-y-5">
+    <form {...f.formProps} className="space-y-5">
       <div className="grid gap-4 md:grid-cols-3">
-        <div>
-          <label htmlFor="cp-code" className="label">
-            Code
-          </label>
-          <input id="cp-code" name="code" defaultValue={coupon.code} required className="field uppercase" placeholder="DIWALI15" />
-        </div>
-        <div className="md:col-span-2">
-          <label htmlFor="cp-desc" className="label">
-            Description (shown to the customer when applied)
-          </label>
-          <input id="cp-desc" name="description" defaultValue={coupon.description} className="field" placeholder="15% off for Diwali" />
-        </div>
-        <div>
-          <label htmlFor="cp-type" className="label">
-            Type
-          </label>
-          <select id="cp-type" name="type" value={type} onChange={(e) => setType(e.target.value as CouponValues["type"])} className="field">
+        <Field f={f} name="code" label="Code" hint="3–30 letters or numbers. Customers type this at checkout.">
+          <input {...f.field("code", { hint: true })} defaultValue={coupon.code} maxLength={30} autoComplete="off" className="field uppercase" placeholder="DIWALI15" />
+        </Field>
+        <Field f={f} name="description" label="Description (shown to the customer when applied)" optional className="md:col-span-2">
+          <input {...f.field("description")} defaultValue={coupon.description} maxLength={200} className="field" placeholder="15% off for Diwali" />
+        </Field>
+        <Field f={f} name="type" label="Type">
+          <select {...f.field("type")} value={type} onChange={(e) => setType(e.target.value as CouponValues["type"])} className="field">
             <option value="PERCENT">Percentage off</option>
             <option value="FIXED">Fixed amount off</option>
             <option value="FREE_SHIPPING">Free shipping</option>
           </select>
-        </div>
+        </Field>
         {type !== "FREE_SHIPPING" && (
-          <div>
-            <label htmlFor="cp-value" className="label">
-              {type === "PERCENT" ? "Percent off" : "Amount off (₹)"}
-            </label>
-            <input id="cp-value" name="value" defaultValue={coupon.value} inputMode="decimal" required className="field" />
-          </div>
+          <Field f={f} name="value" label={type === "PERCENT" ? "Percent off" : "Amount off (₹)"} hint={type === "PERCENT" ? "1 to 90" : undefined}>
+            <input {...f.field("value", { hint: type === "PERCENT" })} defaultValue={coupon.value} inputMode="decimal" maxLength={10} className="field" placeholder={type === "PERCENT" ? "15" : "100"} />
+          </Field>
         )}
         {type === "PERCENT" && (
-          <div>
-            <label htmlFor="cp-max" className="label">
-              Maximum discount ₹ (optional)
-            </label>
-            <input id="cp-max" name="maxDiscount" defaultValue={coupon.maxDiscount} inputMode="decimal" className="field" />
-          </div>
+          <Field f={f} name="maxDiscount" label="Maximum discount ₹" optional>
+            <input {...f.field("maxDiscount")} defaultValue={coupon.maxDiscount} inputMode="decimal" maxLength={10} className="field" />
+          </Field>
         )}
-        <div>
-          <label htmlFor="cp-min" className="label">
-            Minimum order ₹ (optional)
-          </label>
-          <input id="cp-min" name="minOrder" defaultValue={coupon.minOrder} inputMode="decimal" className="field" />
-        </div>
-        <div>
-          <label htmlFor="cp-total" className="label">
-            Total uses allowed (optional)
-          </label>
-          <input id="cp-total" name="usageLimitTotal" defaultValue={coupon.usageLimitTotal} inputMode="numeric" className="field" />
-        </div>
-        <div>
-          <label htmlFor="cp-per" className="label">
-            Uses per customer (optional)
-          </label>
-          <input id="cp-per" name="usageLimitPerCustomer" defaultValue={coupon.usageLimitPerCustomer} inputMode="numeric" className="field" />
-        </div>
-        <div>
-          <label htmlFor="cp-start" className="label">
-            Starts on (optional)
-          </label>
-          <input id="cp-start" type="date" name="startsOn" defaultValue={coupon.startsOn} className="field" />
-        </div>
-        <div>
-          <label htmlFor="cp-end" className="label">
-            Ends after (optional)
-          </label>
-          <input id="cp-end" type="date" name="endsOn" defaultValue={coupon.endsOn} className="field" />
-        </div>
+        <Field f={f} name="minOrder" label="Minimum order ₹" optional>
+          <input {...f.field("minOrder")} defaultValue={coupon.minOrder} inputMode="decimal" maxLength={10} className="field" />
+        </Field>
+        <Field f={f} name="usageLimitTotal" label="Total uses allowed" optional>
+          <input {...f.field("usageLimitTotal")} defaultValue={coupon.usageLimitTotal} inputMode="numeric" maxLength={7} className="field" />
+        </Field>
+        <Field f={f} name="usageLimitPerCustomer" label="Uses per customer" optional>
+          <input {...f.field("usageLimitPerCustomer")} defaultValue={coupon.usageLimitPerCustomer} inputMode="numeric" maxLength={7} className="field" />
+        </Field>
+        <Field f={f} name="startsOn" label="Starts on" optional>
+          <input {...f.field("startsOn")} type="date" defaultValue={coupon.startsOn} className="field" />
+        </Field>
+        <Field f={f} name="endsOn" label="Ends after" optional>
+          <input {...f.field("endsOn")} type="date" defaultValue={coupon.endsOn} className="field" />
+        </Field>
       </div>
       <fieldset>
         <legend className="label">Applies to</legend>
@@ -125,15 +100,24 @@ export function CouponForm({ coupon, products, categories }: { coupon: CouponVal
             ))}
           </div>
         )}
+        <FieldError f={f} name="productIds" />
+        <FieldError f={f} name="categoryIds" />
       </fieldset>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="isActive" defaultChecked={coupon.isActive} className="size-4 accent-forest" /> Active
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="isFeatured" defaultChecked={coupon.isFeatured} className="size-4 accent-forest" /> Show this code in the scrolling banner at the top of the shop (the newest featured code that&apos;s valid now is shown)
       </label>
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className="rounded-full bg-forest px-6 py-2.5 font-semibold text-ivory disabled:opacity-60">
           {pending ? "Saving…" : coupon.id ? "Save coupon" : "Create coupon"}
         </button>
-        {state && <span className={`text-sm font-semibold ${state.ok ? "text-forest" : "text-chilli"}`}>{state.message}</span>}
+        {hasFieldErrors ? (
+          <span className="text-sm font-semibold text-chilli">Please fix the highlighted fields.</span>
+        ) : (
+          state && <span className={`text-sm font-semibold ${state.ok ? "text-forest" : "text-chilli"}`}>{state.message}</span>
+        )}
       </div>
     </form>
   );

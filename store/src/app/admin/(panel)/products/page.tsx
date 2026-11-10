@@ -42,7 +42,15 @@ async function ProductsList() {
 
   return (
     <>
-      <PageHeader title="Products" description="Everything in your catalogue. Drafts and archived products are hidden from the shop." />
+      <PageHeader
+        title="Products"
+        description="Everything in your catalogue. Drafts and archived products are hidden from the shop."
+        actions={
+          <Link href="/admin/products/import" className="rounded-full border border-forest px-4 py-2 text-sm font-semibold text-forest">
+            Import / export spreadsheet
+          </Link>
+        }
+      />
       <Panel className="mb-6">
         <NewProductForm categories={cats} />
       </Panel>
@@ -52,7 +60,7 @@ async function ProductsList() {
             <Td>
               <Link href={`/admin/products/${p.id}`} className="flex items-center gap-3 font-semibold text-forest hover:underline">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                {p.image ? <img src={mediaUrl(p.image, "thumb")!} alt="" className="size-10 rounded-lg object-cover" /> : <span className="size-10 rounded-lg bg-sand" />}
+                {p.image ? <img src={mediaUrl(p.image, "small")!} alt="" loading="lazy" className="size-10 rounded-lg object-cover" /> : <span className="size-10 rounded-lg bg-sand" />}
                 {p.name}
               </Link>
             </Td>

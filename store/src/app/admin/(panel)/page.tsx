@@ -10,9 +10,13 @@ import { getDb } from "@/db";
 import { formatINR } from "@/lib/money";
 import { resolveRange } from "@/server/date-ranges";
 import { STATUS_LABELS } from "@/server/orders/common";
+import { staffTwoStepRequired } from "@/lib/env";
+import { recoveryCodesLeft } from "@/server/auth/recovery-codes";
 import { can } from "@/server/permissions";
 import * as reports from "@/server/reports";
+import { variantTitle } from "@/server/catalog/variant-title";
 import { missingStoreDetails, readAllSettings } from "@/server/settings";
+import { waitingForRestock } from "@/server/stock-alerts";
 
 export const metadata = { title: "Dashboard" };
 
@@ -33,7 +37,7 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/admin">["
   const prev = reports.previousRange(r.range);
   const db = getDb();
 
-  const [cur, before, series, prevSeries, top, cats, statuses, pay, coupons, ship, cod, low, queue, settings] = await Promise.all([
+  const [cur, before, series, prevSeries, top, cats, statuses, pay, coupons, ship, cod, low, queue, settings, waiting, codesLeft] = await Promise.all([
     reports.salesSummary(db, r.range),
     reports.salesSummary(db, prev),
     reports.salesSeries(db, r.range, r.unit),
@@ -48,6 +52,8 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/admin">["
     reports.lowStock(db),
     reports.workQueue(db),
     readAllSettings(db),
+    waitingForRestock(db),
+    recoveryCodesLeft(db, staff.id),
   ]);
   const missing = missingStoreDetails(settings.store);
   const trend = series.map((p, i) => ({ bucket: p.bucket, value: p.netPaise, compare: prevSeries[i]?.netPaise }));
@@ -56,6 +62,14 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/admin">["
   return (
     <>
       <PageHeader title="Dashboard" description={`${r.label} · compared with the previous ${r.label === "Today" ? "day" : "period of the same length"}. Times in IST.`} />
+      {codesLeft === 0 && staff.totpEnabled && staffTwoStepRequired() && (
+        <Notice tone="warn" className="mb-6">
+          Get your 2-step verification backup codes, so a lost phone can&apos;t lock you out.{" "}
+          <Link href="/admin/account/backup-codes" className="font-semibold underline">
+            Get backup codes
+          </Link>
+        </Notice>
+      )}
       {missing.length > 0 && can(staff.role, "settings.manage") && (
         <Notice tone="warn" className="mb-6">
           Before launch, add these in{" "}
@@ -66,13 +80,15 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/admin">["
         </Notice>
       )}
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
         {[
           { label: "To pack", value: queue.to_pack, href: "/admin/orders?status=CONFIRMED" },
+          { label: "Problems reported by customers", value: queue.open_problems, href: "/admin/problems" },
           { label: "COD awaiting customer confirmation", value: queue.awaiting_cod, href: "/admin/orders?status=AWAITING_COD_CONFIRMATION" },
           { label: "Awaiting online payment", value: queue.awaiting_payment, href: "/admin/orders?status=AWAITING_PAYMENT" },
           { label: "Delivery problems", value: queue.delivery_failed, href: "/admin/orders?status=DELIVERY_FAILED" },
           { label: "Reviews to moderate", value: queue.pending_reviews, href: "/admin/reviews" },
+          { label: "New business enquiries", value: queue.new_enquiries, href: "/admin/enquiries" },
         ].map((q) => (
           <Link key={q.label} href={q.href} className="rounded-2xl border border-line bg-paper p-4 hover:border-forest">
             <p className="text-xs font-semibold text-muted">{q.label}</p>
@@ -80,6 +96,25 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/admin">["
           </Link>
         ))}
       </div>
+
+      {waiting.length > 0 && (
+        <Panel title="Customers waiting for a restock" className="mb-6">
+          <ul className="divide-y divide-line text-sm">
+            {waiting.map((w) => (
+              <li key={`${w.productId}-${JSON.stringify(w.optionValues)}`} className="flex justify-between gap-4 py-2">
+                <Link href={`/admin/products/${w.productId}`} className="font-semibold text-forest hover:underline">
+                  {w.productName}
+                  <span className="font-normal text-muted"> · {variantTitle(w.options, w.optionValues)}</span>
+                </Link>
+                <span className="tabular-nums">
+                  {w.waiting} waiting
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted">They&apos;re emailed automatically when stock is back.</p>
+        </Panel>
+      )}
 
       <DateRangeFilter active={r.key} fromDate={r.fromDate} toDate={r.toDate} />
 

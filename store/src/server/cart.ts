@@ -8,6 +8,7 @@ import { cartItems, carts, inventoryItems, productImages, products, productVaria
 import type { PricingLine } from "@/lib/pricing";
 import { variantTitle } from "./catalog/variant-title";
 import { sellableQuantity } from "./inventory";
+import { activeSales, priceWithSale } from "./sales";
 
 export const MAX_QTY_PER_LINE = 20;
 export const MAX_LINES = 40;
@@ -17,12 +18,17 @@ export type CartLine = {
   productId: number;
   productSlug: string;
   productName: string;
+  /** Hindi name for /hi pages ("" when not filled in). Orders and invoices keep the English name. */
+  productNameHi: string;
   variantTitle: string;
   sku: string;
   imageId: number | null;
   categoryId: number | null;
+  /** After any running sale. */
   unitPricePaise: number;
   mrpPaise: number;
+  /** Name of the sale that lowered the price, if any. */
+  saleName: string | null;
   netWeightGrams: number;
   shippingWeightGrams: number;
   gstRateBp: number;
@@ -60,6 +66,7 @@ export async function loadCartLines(db: DbOrTx, cartId: string): Promise<CartLin
         id: products.id,
         slug: products.slug,
         name: products.name,
+        nameHi: products.nameHi,
         status: products.status,
         options: products.options,
         categoryId: products.categoryId,
@@ -74,6 +81,7 @@ export async function loadCartLines(db: DbOrTx, cartId: string): Promise<CartLin
     .orderBy(asc(cartItems.addedAt));
 
   const productIds = [...new Set(rows.map((r) => r.product.id))];
+  const running = rows.length ? await activeSales(db) : [];
   const images = productIds.length
     ? await db
         .select({ productId: productImages.productId, mediaId: productImages.mediaId })
@@ -84,17 +92,21 @@ export async function loadCartLines(db: DbOrTx, cartId: string): Promise<CartLin
   const firstImage = new Map<number, number>();
   for (const img of images) if (!firstImage.has(img.productId)) firstImage.set(img.productId, img.mediaId);
 
-  return rows.map((r) => ({
+  return rows.map((r) => {
+    const { pricePaise, sale } = priceWithSale(r.variant.pricePaise, r.product, running);
+    return {
     variantId: r.variant.id,
     productId: r.product.id,
     productSlug: r.product.slug,
     productName: r.product.name,
+    productNameHi: r.product.nameHi,
     variantTitle: variantTitle(r.product.options, r.variant.optionValues),
     sku: r.variant.sku,
     imageId: firstImage.get(r.product.id) ?? null,
     categoryId: r.product.categoryId,
-    unitPricePaise: r.variant.pricePaise,
+    unitPricePaise: pricePaise,
     mrpPaise: r.variant.mrpPaise,
+    saleName: sale?.name ?? null,
     netWeightGrams: r.variant.netWeightGrams,
     shippingWeightGrams: r.variant.shippingWeightGrams,
     gstRateBp: r.variant.gstRateBp,
@@ -106,7 +118,8 @@ export async function loadCartLines(db: DbOrTx, cartId: string): Promise<CartLin
     quantity: r.quantity,
     sellable: r.pool.isActive ? sellableQuantity(r.pool.onHand - r.pool.reserved, r.variant.unitsPerSale) : 0,
     purchasable: r.product.status === "ACTIVE" && r.variant.isActive && r.pool.isActive,
-  }));
+    };
+  });
 }
 
 /** Problems that block checkout. Lines sharing a bulk pool are checked together. */
@@ -169,6 +182,32 @@ export async function addToCart(db: DbOrTx, cartId: string, variantId: number, q
     .onConflictDoUpdate({ target: [cartItems.cartId, cartItems.variantId], set: { quantity: target } });
   await db.update(carts).set({ updatedAt: new Date() }).where(eq(carts.id, cartId));
   return { quantity: target, limited: target < (existing?.quantity ?? 0) + quantity };
+}
+
+/**
+ * Adds a past order's items to a cart ("Buy again"). Items that are no longer
+ * sold or are out of stock are skipped and reported by name.
+ */
+export async function addOrderItemsToCart(db: DbOrTx, cartId: string, items: { variantId: number | null; productName: string; variantTitle: string; quantity: number }[]) {
+  let added = 0;
+  let limited = false;
+  const unavailable: string[] = [];
+  for (const item of items) {
+    const label = item.variantTitle ? `${item.productName} (${item.variantTitle})` : item.productName;
+    if (!item.variantId) {
+      unavailable.push(label);
+      continue;
+    }
+    try {
+      const r = await addToCart(db, cartId, item.variantId, item.quantity);
+      added++;
+      limited ||= r.limited;
+    } catch (err) {
+      if (!(err instanceof CartError)) throw err;
+      unavailable.push(label);
+    }
+  }
+  return { added, limited, unavailable };
 }
 
 export async function setCartQuantity(db: DbOrTx, cartId: string, variantId: number, quantity: number) {

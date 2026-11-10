@@ -8,10 +8,12 @@ import { getDb } from "@/db";
 import { categories, collections, productImages } from "@/db/schema";
 import { requireStaffAction } from "@/data/session";
 import { logAudit } from "@/server/audit";
-import { CatalogError, createProduct, deleteProduct, moveImage, productDetailsSchema, saveVariants, slugify, updateProductDetails, variantsPayloadSchema } from "@/server/catalog/admin";
+import { groupFormSchema, newProductSchema, productDetailsSchema } from "@/lib/form-schemas";
+import { fieldErrorsFrom, type FieldErrors } from "@/lib/validation";
+import { CatalogError, createProduct, deleteProduct, moveImage, saveVariants, slugify, updateProductDetails, variantsPayloadSchema } from "@/server/catalog/admin";
 import { MediaError, saveImage } from "@/server/media";
 
-export type CatalogResult = { ok: boolean; message: string } | null;
+export type CatalogResult = { ok: boolean; message: string; fieldErrors?: FieldErrors } | null;
 
 function invalidate(...slugs: (string | undefined)[]) {
   updateTag("catalog");
@@ -21,10 +23,10 @@ function invalidate(...slugs: (string | undefined)[]) {
 
 export async function createProductAction(_prev: CatalogResult, formData: FormData): Promise<CatalogResult> {
   const staff = await requireStaffAction("products.manage");
-  const name = String(formData.get("name") ?? "").trim();
-  if (name.length < 2) return { ok: false, message: "Enter a product name." };
+  const parsed = newProductSchema.safeParse({ name: formData.get("name") });
+  if (!parsed.success) return { ok: false, message: "Please fix the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
   const categoryId = Number(formData.get("categoryId")) || null;
-  const p = await createProduct(getDb(), { name, categoryId }, staff.id);
+  const p = await createProduct(getDb(), { name: parsed.data.name, categoryId }, staff.id);
   redirect(`/admin/products/${p.id}`);
 }
 
@@ -36,7 +38,7 @@ export async function updateProductAction(productId: number, _prev: CatalogResul
     isFeatured: formData.get("isFeatured") === "on",
     collectionIds: formData.getAll("collectionIds"),
   });
-  if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
+  if (!parsed.success) return { ok: false, message: "Please fix the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
   try {
     const r = await updateProductDetails(getDb(), productId, parsed.data, staff.id);
     invalidate(r.slug, r.previousSlug);
@@ -121,14 +123,11 @@ export async function updateImageAltAction(imageId: number, alt: string) {
 
 /* ---------------- Categories & collections ---------------- */
 
-const groupSchema = z.object({
+const groupSchema = groupFormSchema.extend({
   id: z.coerce.number().int().positive().optional(),
-  name: z.string().trim().min(2).max(80),
-  slug: z.string().trim().max(80).default(""),
-  description: z.string().trim().max(500).default(""),
-  sortOrder: z.coerce.number().int().min(0).max(1000).default(0),
   isActive: z.boolean(),
   showOnHome: z.boolean().default(false),
+  showInShopBy: z.boolean().default(false),
 });
 
 export async function saveGroupAction(kind: "category" | "collection", _prev: CatalogResult, formData: FormData): Promise<CatalogResult> {
@@ -138,18 +137,19 @@ export async function saveGroupAction(kind: "category" | "collection", _prev: Ca
     id: formData.get("id") || undefined,
     isActive: formData.get("isActive") === "on",
     showOnHome: formData.get("showOnHome") === "on",
+    showInShopBy: formData.get("showInShopBy") === "on",
   });
-  if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
+  if (!parsed.success) return { ok: false, message: "Please fix the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
   const d = parsed.data;
   const table = kind === "category" ? categories : collections;
-  const values = { name: d.name, slug: slugify(d.slug || d.name), description: d.description, sortOrder: d.sortOrder, isActive: d.isActive, ...(kind === "collection" ? { showOnHome: d.showOnHome } : {}) };
+  const values = { name: d.name, slug: slugify(d.slug || d.name), description: d.description, nameHi: d.nameHi, descriptionHi: d.descriptionHi, sortOrder: d.sortOrder ?? 0, isActive: d.isActive, ...(kind === "collection" ? { showOnHome: d.showOnHome, showInShopBy: d.showInShopBy, categoryId: d.categoryId ?? null } : {}) };
   try {
     const db = getDb();
     if (d.id) await db.update(table).set(values).where(eq(table.id, d.id));
     else await db.insert(table).values(values);
     await logAudit(db, { staffUserId: staff.id, action: `${kind}.save`, entityType: kind, entityId: d.id ?? "", data: { name: d.name } });
   } catch (err) {
-    if (err instanceof Error && /unique/i.test(err.message)) return { ok: false, message: "That web address (slug) is already used." };
+    if (err instanceof Error && /unique/i.test(err.message)) return { ok: false, message: "That web address is already used.", fieldErrors: { slug: "That web address is already used. Choose another." } };
     throw err;
   }
   updateTag("catalog");

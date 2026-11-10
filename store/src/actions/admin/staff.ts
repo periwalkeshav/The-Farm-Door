@@ -6,11 +6,13 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import { staffUsers } from "@/db/schema";
 import { requireStaffAction } from "@/data/session";
-import { hashPassword, passwordProblem, verifyPassword } from "@/lib/crypto";
+import { hashPassword, verifyPassword } from "@/lib/crypto";
+import { changePasswordSchema, createStaffSchema } from "@/lib/form-schemas";
+import { fieldErrorsFrom, type FieldErrors } from "@/lib/validation";
 import { logAudit } from "@/server/audit";
 import { changeRole, createStaff, resetPassword, resetTwoFactor, setActive, StaffAdminError } from "@/server/staff-admin";
 
-export type StaffResult = { ok: boolean; message: string; secret?: string } | null;
+export type StaffResult = { ok: boolean; message: string; secret?: string; fieldErrors?: FieldErrors } | null;
 const ROLE = z.enum(["OWNER", "MANAGER", "PACKER", "ACCOUNTANT"]);
 
 async function guarded(fn: () => Promise<StaffResult>): Promise<StaffResult> {
@@ -19,15 +21,15 @@ async function guarded(fn: () => Promise<StaffResult>): Promise<StaffResult> {
     refresh();
     return r;
   } catch (err) {
-    if (err instanceof StaffAdminError) return { ok: false, message: err.message };
+    if (err instanceof StaffAdminError) return { ok: false, message: err.message, fieldErrors: /already exists/.test(err.message) ? { email: err.message } : undefined };
     throw err;
   }
 }
 
 export async function createStaffAction(_prev: StaffResult, formData: FormData): Promise<StaffResult> {
   const me = await requireStaffAction("staff.manage");
-  const parsed = z.object({ name: z.string().trim().min(2).max(80), email: z.email().max(120), role: ROLE }).safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { ok: false, message: "Enter a name, a valid email and a role." };
+  const parsed = createStaffSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, message: "Please check the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
   return guarded(async () => {
     const r = await createStaff(getDb(), parsed.data, me.id);
     return { ok: true, message: `Account created for ${parsed.data.email}. Share this temporary password with them privately; they'll set up 2-step verification at first sign-in and should then change it.`, secret: r.password };
@@ -70,14 +72,12 @@ export async function resetTwoFactorAction(staffId: number): Promise<StaffResult
 
 export async function changeMyPasswordAction(_prev: StaffResult, formData: FormData): Promise<StaffResult> {
   const me = await requireStaffAction();
-  const current = String(formData.get("current") ?? "");
-  const next = String(formData.get("next") ?? "");
-  if (next !== String(formData.get("confirm") ?? "")) return { ok: false, message: "The new passwords don't match." };
-  const problem = passwordProblem(next);
-  if (problem) return { ok: false, message: problem };
+  const parsed = changePasswordSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, message: "Please check the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
+  const { current, next } = parsed.data;
   const db = getDb();
   const [row] = await db.select().from(staffUsers).where(eq(staffUsers.id, me.id));
-  if (!row || !(await verifyPassword(current, row.passwordHash))) return { ok: false, message: "Your current password isn't right." };
+  if (!row || !(await verifyPassword(current, row.passwordHash))) return { ok: false, message: "Your current password isn't right.", fieldErrors: { current: "Your current password isn't right." } };
   await db.update(staffUsers).set({ passwordHash: await hashPassword(next) }).where(eq(staffUsers.id, me.id));
   await logAudit(db, { staffUserId: me.id, action: "staff.change_password", entityType: "staff", entityId: me.id });
   return { ok: true, message: "Password changed." };

@@ -5,6 +5,7 @@
 import { and, asc, desc, eq, gte, lt, sql, type SQL } from "drizzle-orm";
 import type { DbOrTx } from "@/db";
 import { coupons, inventoryItems, newsletterSubscribers, orderItems, orders, payments, refunds, shipments, stockMovements } from "@/db/schema";
+import { CATALOG_COLUMNS, CATALOG_EXAMPLE_ROWS, catalogRows } from "./catalog/import";
 import { listCustomers } from "./customers";
 import type { Permission } from "./permissions";
 import * as reports from "./reports";
@@ -16,7 +17,25 @@ const rs = (paise: number | null | undefined) => (paise === null || paise === un
 const ist = (d: Date | null | undefined) => (d ? new Date(d.getTime() + 5.5 * 3600_000).toISOString().replace("T", " ").slice(0, 19) : "");
 const pct = (bp: number) => (bp / 100).toFixed(2);
 
-export const EXPORTS: Record<string, { title: string; permission: Permission; dated: boolean; build: (db: DbOrTx, ctx: Ctx) => Promise<Csv> }> = {
+export const EXPORTS: Record<string, { title: string; permission: Permission; dated: boolean; requiresExportPermission?: false; build: (db: DbOrTx, ctx: Ctx) => Promise<Csv> }> = {
+  catalogue: {
+    title: "Catalogue (for editing and re-importing)",
+    permission: "products.manage",
+    requiresExportPermission: false,
+    dated: false,
+    async build(db) {
+      return { filename: "catalogue.csv", header: [...CATALOG_COLUMNS, "stock_now"], rows: await catalogRows(db) };
+    },
+  },
+  "catalogue-template": {
+    title: "Catalogue import template",
+    permission: "products.manage",
+    requiresExportPermission: false,
+    dated: false,
+    async build() {
+      return { filename: "catalogue-template.csv", header: [...CATALOG_COLUMNS], rows: CATALOG_EXAMPLE_ROWS };
+    },
+  },
   orders: {
     title: "Orders",
     permission: "orders.customerDetails",

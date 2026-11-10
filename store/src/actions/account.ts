@@ -6,16 +6,16 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import { addresses, customers, newsletterSubscribers, orderItems, orders, reviews } from "@/db/schema";
 import { requireCustomer } from "@/data/session";
-import { normalizeIndianMobile } from "@/lib/india";
+import { profileSchema, reviewFields } from "@/lib/form-schemas";
+import { fieldErrorsFrom, type FieldErrors } from "@/lib/validation";
 
-export type FormState = { ok: boolean; message: string } | null;
+export type FormState = { ok: boolean; message: string; fieldErrors?: FieldErrors } | null;
 
 export async function updateProfileAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const customer = await requireCustomer();
-  const name = String(formData.get("name") ?? "").trim().slice(0, 80);
-  const phoneRaw = String(formData.get("phone") ?? "").trim();
-  const phone = phoneRaw ? normalizeIndianMobile(phoneRaw) : "";
-  if (phone === null) return { ok: false, message: "Enter a 10-digit Indian mobile number." };
+  const parsed = profileSchema.safeParse({ name: formData.get("name"), phone: formData.get("phone") });
+  if (!parsed.success) return { ok: false, message: "Please check the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
+  const { name, phone } = parsed.data;
   const optIn = formData.get("marketingOptIn") === "on";
   const db = getDb();
   await db.update(customers).set({ name, phone, marketingOptIn: optIn, marketingOptInAt: optIn ? new Date() : null }).where(eq(customers.id, customer.id));
@@ -51,18 +51,16 @@ export async function requestDeletionAction(): Promise<FormState> {
   return { ok: true, message: "We've received your request. We'll delete your personal data within 30 days, keeping only what tax law requires for past invoices." };
 }
 
-const reviewSchema = z.object({
+const reviewSchema = reviewFields.extend({
   productId: z.coerce.number().int().positive(),
-  rating: z.coerce.number().int().min(1).max(5),
-  title: z.string().trim().max(100).default(""),
-  body: z.string().trim().min(10, "Please write at least a sentence.").max(2000),
+  rating: z.coerce.number().int().min(1, "Choose a star rating.").max(5),
 });
 
 /** Reviews are only accepted from customers with a delivered order containing the product, and wait for approval. */
 export async function submitReviewAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const customer = await requireCustomer();
   const parsed = reviewSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
+  if (!parsed.success) return { ok: false, message: "Please check the highlighted fields.", fieldErrors: fieldErrorsFrom(parsed.error) };
   const db = getDb();
   const [delivered] = await db
     .select({ orderId: orders.id })

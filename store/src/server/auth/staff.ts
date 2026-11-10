@@ -2,13 +2,13 @@
  * Staff (admin) sign-in: password + authenticator-app code (2-step verification
  * is mandatory). Accounts lock for 15 minutes after 5 wrong passwords.
  */
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, lt, or } from "drizzle-orm";
 import type { Database, DbOrTx } from "@/db";
 import { staffUsers } from "@/db/schema";
 import { decrypt, encrypt, hashPassword, verifyPassword } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { normalizeEmail } from "@/lib/india";
-import { generateTotpSecret, verifyTotp } from "@/lib/totp";
+import { generateTotpSecret, totpStep } from "@/lib/totp";
 import { enforceRateLimits } from "../rate-limit";
 
 const LOCK_AFTER = 5;
@@ -53,10 +53,28 @@ export async function checkStaffPassword(db: Database, rawEmail: string, passwor
   return { ok: true, staff };
 }
 
-export async function checkStaffTotp(db: Database, staff: StaffUser, code: string, ip: string): Promise<boolean> {
+/**
+ * Checks an authenticator code. For signing in (`signIn`), each code works
+ * once: a code seen over someone's shoulder can't be used again while it's
+ * still current (RFC 6238 §5.2).
+ */
+export async function checkStaffTotp(db: Database, staff: StaffUser, code: string, ip: string, { signIn = false } = {}): Promise<boolean> {
   await enforceRateLimits(db, [{ key: `staff-totp:${staff.id}`, limit: 10, windowSeconds: 900 }, { key: `staff-totp:ip:${ip}`, limit: 30, windowSeconds: 900 }]);
   if (!staff.totpSecretEnc) return false;
-  return verifyTotp(decrypt(staff.totpSecretEnc, env().ENCRYPTION_KEY), code);
+  const step = totpStep(decrypt(staff.totpSecretEnc, env().ENCRYPTION_KEY), code);
+  if (step === null) return false;
+  if (!signIn) return true;
+  return markTotpUsed(db, staff.id, step);
+}
+
+/** Records the step of a code used to sign in; false if that code (or a later one) was already used. */
+export async function markTotpUsed(db: DbOrTx, staffId: number, step: number): Promise<boolean> {
+  const [row] = await db
+    .update(staffUsers)
+    .set({ totpLastStep: step })
+    .where(and(eq(staffUsers.id, staffId), or(isNull(staffUsers.totpLastStep), lt(staffUsers.totpLastStep, step))))
+    .returning({ id: staffUsers.id });
+  return !!row;
 }
 
 /** Starts authenticator setup: stores a new (not yet enabled) secret and returns it for the QR code. */

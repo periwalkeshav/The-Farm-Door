@@ -1,0 +1,54 @@
+# Runs every check whenever code is pushed: types, lint, unit tests and the
+# browser robot that shops on a private copy of the store (simulated payments).
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: store
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Throwaway values for the test run only. Never real keys.
+      TEST_DATABASE_URL: postgres://postgres@localhost:5432/farmdoor_test
+      E2E_DATABASE_URL: postgres://postgres@localhost:5432/farmdoor_e2e
+      AUTH_SECRET: ci-only-auth-secret-not-used-anywhere-else-0123
+      ENCRYPTION_KEY: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
+      CRON_SECRET: ci-only-cron-secret-0123456789
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: store/package-lock.json
+      - run: npm ci
+      - run: psql postgres://postgres@localhost:5432/postgres -c "create database farmdoor_test"
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          CI: "1"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: store/test-results
+          retention-days: 7

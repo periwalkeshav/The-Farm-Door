@@ -12,6 +12,8 @@ const paise = z.number().int().min(0);
 export const storeSettingsSchema = z.object({
   tradeName: z.string().default("The Farm Door"),
   legalName: z.string().default(""),
+  /** Corporate Identity Number (companies). Shown on invoices and the contact page when set. */
+  cin: z.string().default(""),
   gstin: z.string().default(""),
   fssaiNumber: z.string().default(""),
   addressLine1: z.string().default(""),
@@ -21,6 +23,7 @@ export const storeSettingsSchema = z.object({
   pincode: z.string().default(""),
   supportEmail: z.string().default(""),
   supportPhone: z.string().default(""),
+  supportHours: z.string().default(""),
   whatsappNumber: z.string().default(""),
   instagramUrl: z.string().default(""),
   facebookUrl: z.string().default(""),
@@ -40,7 +43,7 @@ export const shippingSettingsSchema = z.object({
   boxBreadthCm: z.number().min(1).default(15),
   boxHeightCm: z.number().min(1).default(10),
   /** Which serviceable courier's rate the customer is charged (and which we book). */
-  courierChoice: z.enum(["CHEAPEST", "FASTEST", "RECOMMENDED"]).default("RECOMMENDED"),
+  courierChoice: z.enum(["CHEAPEST", "FASTEST", "RECOMMENDED"]).default("CHEAPEST"),
 });
 
 export const codSettingsSchema = z.object({
@@ -63,6 +66,40 @@ export const notificationSettingsSchema = z.object({
   newOrderEmails: z.boolean().default(true),
   lowStockEmails: z.boolean().default(true),
   dailySummary: z.boolean().default(true),
+  /** One reminder email when a customer placed an online-payment order but never paid. */
+  unpaidReminder: z.boolean().default(true),
+  /** Hours after the order was placed before that reminder goes out. */
+  unpaidReminderHours: z.number().int().min(1).max(24).default(3),
+  /** "How was your order?" email asking for a review, some days after delivery. */
+  reviewRequests: z.boolean().default(true),
+  reviewRequestDays: z.number().int().min(1).max(30).default(5),
+});
+
+export const loyaltySettingsSchema = z.object({
+  pointsEnabled: z.boolean().default(false),
+  /** Points earned per ₹100 of items paid for (after discounts), credited on delivery. */
+  pointsPerHundredRupees: z.number().int().min(1).max(20).default(2),
+  /** What one point is worth at checkout. */
+  pointValuePaise: z.number().int().min(10).max(1000).default(100),
+  /** Most of the items total that can be paid with points. */
+  maxRedeemPercent: z.number().int().min(5).max(50).default(20),
+  minPointsToRedeem: z.number().int().min(0).max(10_000).default(50),
+  referralsEnabled: z.boolean().default(false),
+  /** Discount a new customer gets with a friend's code, on their first order. */
+  referralDiscountPercent: z.number().int().min(1).max(50).default(10),
+  referralMaxDiscountPaise: paise.default(10_000),
+  /** Points the referrer gets when that first order is delivered. */
+  referralRewardPoints: z.number().int().min(0).max(10_000).default(100),
+});
+
+export const whatsappSettingsSchema = z.object({
+  /** Offer WhatsApp order updates at checkout (also needs the server's WhatsApp credentials). */
+  enabled: z.boolean().default(false),
+});
+
+export const analyticsSettingsSchema = z.object({
+  /** Google Analytics 4 measurement ID (G-…). Empty = no analytics and no cookie banner. */
+  gaMeasurementId: z.string().default(""),
 });
 
 export const SETTINGS = {
@@ -71,6 +108,9 @@ export const SETTINGS = {
   cod: codSettingsSchema,
   checkout: checkoutSettingsSchema,
   notifications: notificationSettingsSchema,
+  analytics: analyticsSettingsSchema,
+  loyalty: loyaltySettingsSchema,
+  whatsapp: whatsappSettingsSchema,
 } as const;
 
 export type SettingsKey = keyof typeof SETTINGS;
@@ -95,12 +135,18 @@ export async function readAllSettings(db: DbOrTx): Promise<AllSettings> {
   return out as AllSettings;
 }
 
-export async function writeSettings<K extends SettingsKey>(db: DbOrTx, key: K, value: SettingsValue<K>) {
+/** Saves one settings group. Fields left out get their defaults. */
+export async function writeSettings<K extends SettingsKey>(db: DbOrTx, key: K, value: z.input<(typeof SETTINGS)[K]>) {
   const data = SETTINGS[key].parse(value);
   await db
     .insert(settings)
     .values({ key, value: data })
     .onConflictDoUpdate({ target: settings.key, set: { value: data, updatedAt: new Date() } });
+}
+
+/** Sample values used in development (example.com emails, all-zero phone numbers). */
+export function isPlaceholder(value: string): boolean {
+  return /@example\.(com|org|net)$/i.test(value.trim()) || /0{5}\s?0{5}/.test(value);
 }
 
 /** True when the business details needed on invoices and policy pages are filled in. */
@@ -110,7 +156,7 @@ export function missingStoreDetails(store: SettingsValue<"store">): string[] {
   if (!store.addressLine1 || !store.pincode) missing.push("Registered address");
   if (!store.gstin) missing.push("GSTIN");
   if (!store.fssaiNumber) missing.push("FSSAI licence/registration number");
-  if (!store.supportEmail) missing.push("Support email");
-  if (!store.supportPhone) missing.push("Support phone");
+  if (!store.supportEmail || isPlaceholder(store.supportEmail)) missing.push("Support email");
+  if (!store.supportPhone || isPlaceholder(store.supportPhone)) missing.push("Support phone");
   return missing;
 }

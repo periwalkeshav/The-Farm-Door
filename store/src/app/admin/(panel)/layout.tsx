@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { staffSignOutAction } from "@/actions/admin/auth";
 import { Logo } from "@/components/ui";
 import { requireStaff } from "@/data/session";
-import { testModeReasons } from "@/lib/env";
+import { staffTwoStepRequired, testModeReasons } from "@/lib/env";
 import { can, ROLE_LABELS, type Permission } from "@/server/permissions";
 
 // Every admin page depends on the signed-in staff member, so navigations wait for the server.
@@ -12,16 +12,22 @@ export const instant = false;
 const NAV: { href: string; label: string; permission: Permission }[] = [
   { href: "/admin", label: "Dashboard", permission: "dashboard.view" },
   { href: "/admin/orders", label: "Orders", permission: "orders.view" },
+  { href: "/admin/problems", label: "Problem reports", permission: "orders.manage" },
   { href: "/admin/products", label: "Products", permission: "products.manage" },
   { href: "/admin/catalog", label: "Categories & collections", permission: "products.manage" },
+  { href: "/admin/recipes", label: "Recipes", permission: "products.manage" },
   { href: "/admin/inventory", label: "Inventory", permission: "inventory.view" },
   { href: "/admin/customers", label: "Customers", permission: "customers.view" },
   { href: "/admin/coupons", label: "Coupons", permission: "coupons.manage" },
+  { href: "/admin/sales", label: "Sales", permission: "coupons.manage" },
+  { href: "/admin/newsletter", label: "Newsletter", permission: "customers.view" },
   { href: "/admin/reviews", label: "Reviews", permission: "reviews.manage" },
+  { href: "/admin/enquiries", label: "Business enquiries", permission: "enquiries.manage" },
   { href: "/admin/reports", label: "Reports & exports", permission: "reports.operations" },
   { href: "/admin/settings", label: "Settings", permission: "settings.manage" },
   { href: "/admin/staff", label: "Staff", permission: "staff.manage" },
   { href: "/admin/emails", label: "Email log", permission: "settings.manage" },
+  { href: "/admin/errors", label: "Site errors", permission: "settings.manage" },
   { href: "/admin/audit", label: "Audit log", permission: "audit.view" },
 ];
 
@@ -39,6 +45,9 @@ async function Shell({ children }: { children: React.ReactNode }) {
   const test = testModeReasons();
   return (
     <div className="lg:grid lg:min-h-dvh lg:grid-cols-[240px_1fr]">
+      <a href="#main" className="sr-only rounded-full bg-forest px-4 py-2.5 text-sm font-semibold text-ivory focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100]">
+        Skip to main content
+      </a>
       <aside className="border-b border-line bg-forest text-ivory lg:border-r lg:border-b-0">
         <div className="flex items-center justify-between gap-3 p-4 lg:block">
           <Link href="/admin" className="block [&_*]:text-ivory">
@@ -71,7 +80,14 @@ async function Shell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="min-w-0">
         {test.length > 0 && <div className="bg-chilli px-4 py-1.5 text-center text-xs font-semibold text-white">TEST MODE: {test.join(", ")}.</div>}
-        <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">{children}</main>
+        {!staffTwoStepRequired() && (
+          <div className="bg-saffron px-4 py-1.5 text-center text-xs font-semibold text-ink" role="note">
+            2-step verification is switched off (STAFF_TWO_STEP=off): anyone with a staff password can sign in. Switch it back on before launch.
+          </div>
+        )}
+        <main id="main" tabIndex={-1} className="mx-auto max-w-7xl p-4 focus:outline-none sm:p-6 lg:p-8">
+          {children}
+        </main>
         <form action={staffSignOutAction} className="px-4 pb-6 lg:hidden">
           <button type="submit" className="text-sm font-semibold text-chilli">
             Sign out ({staff.name})

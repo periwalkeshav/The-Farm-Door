@@ -70,4 +70,7 @@ export const mockProvider: ShippingProvider = {
     if (pincode.startsWith("560")) return { city: "Bengaluru", state: "Karnataka" };
     return null;
   },
+  async combinedLabel() {
+    return null;
+  },
 };

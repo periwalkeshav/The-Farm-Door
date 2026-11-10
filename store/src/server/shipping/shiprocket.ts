@@ -277,4 +277,10 @@ export const shiprocketProvider: ShippingProvider = {
       return null;
     }
   },
+  async combinedLabel(providerShipmentIds: string[]) {
+    const ids = providerShipmentIds.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    if (!ids.length) return null;
+    const label = await call<{ label_created: number; label_url?: string }>("POST", "/courier/generate/label", { shipment_id: ids });
+    return label.label_url || null;
+  },
 };

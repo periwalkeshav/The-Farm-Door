@@ -1,6 +1,7 @@
 import { and, count, desc, eq, gte, ilike, lt, or, sql, type SQL } from "drizzle-orm";
 import Link from "next/link";
 import { Suspense } from "react";
+import { BulkOrderActions, SelectAllOrders, SelectOrder } from "@/components/admin/bulk-orders";
 import { Badge, DataTable, PageHeader, statusTone, Td } from "@/components/admin/ui";
 import { requireStaff } from "@/data/session";
 import { getDb } from "@/db";
@@ -35,6 +36,7 @@ async function OrdersList({ searchParams }: { searchParams: PageProps<"/admin/or
   const to = str(sp.to);
   const page = Math.max(1, Number(sp.page) || 1);
   const seeCustomer = can(staff.role, "orders.customerDetails");
+  const canPack = can(staff.role, "orders.pack");
 
   const where: (SQL | undefined)[] = [];
   if (status && status in STATUS_LABELS) where.push(eq(orders.status, status as keyof typeof STATUS_LABELS));
@@ -125,9 +127,11 @@ async function OrdersList({ searchParams }: { searchParams: PageProps<"/admin/or
           Clear
         </Link>
       </form>
-      <DataTable head={["Order", "Placed", "Customer", "Status", "Payment", "Total"]} empty={rows.length === 0}>
+      {canPack && rows.some((o) => o.status === "CONFIRMED" || o.status === "PACKED") && <BulkOrderActions />}
+      <DataTable head={[...(canPack ? [<SelectAllOrders key="all" />] : []), "Order", "Placed", "Customer", "Status", "Payment", "Total"]} empty={rows.length === 0}>
         {rows.map((o) => (
           <tr key={o.id} className="hover:bg-ivory">
+            {canPack && <Td>{(o.status === "CONFIRMED" || o.status === "PACKED") && <SelectOrder id={o.id} orderNumber={o.orderNumber} />}</Td>}
             <Td>
               <Link href={`/admin/orders/${o.id}`} className="font-bold text-forest hover:underline">
                 {o.orderNumber}

@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { getDb } from "@/db";
+import { staffTwoStepRequired } from "@/lib/env";
 import { customers, staffUsers } from "@/db/schema";
 import { validateSession } from "@/server/auth/sessions";
 import { can, type Permission } from "@/server/permissions";
@@ -62,14 +63,22 @@ export class PermissionError extends Error {
 }
 
 /**
- * Admin guard for pages: fully signed in (password + 2-step code) and, if
- * given, holding the permission. Redirects otherwise.
+ * Fully signed in: password and, unless STAFF_TWO_STEP is "off", the
+ * authenticator code (which means it's been set up).
+ */
+export function staffSignedIn(staff: CurrentStaff | null, twoStepRequired = staffTwoStepRequired()): staff is CurrentStaff {
+  return !!staff && !staff.mfaPending && (staff.totpEnabled || !twoStepRequired);
+}
+
+/**
+ * Admin guard for pages: fully signed in (see staffSignedIn) and, if given,
+ * holding the permission. Redirects otherwise.
  */
 export async function requireStaff(permission?: Permission): Promise<CurrentStaff> {
   const staff = await getStaffSession();
   if (!staff) redirect("/admin/login");
-  if (!staff.totpEnabled) redirect("/admin/setup-2fa");
-  if (staff.mfaPending) redirect("/admin/login/verify");
+  if (staff.mfaPending) redirect(staff.totpEnabled ? "/admin/login/verify" : "/admin/setup-2fa");
+  if (!staffSignedIn(staff)) redirect("/admin/setup-2fa");
   if (permission && !can(staff.role, permission)) redirect("/admin/no-access");
   return staff;
 }
@@ -77,7 +86,7 @@ export async function requireStaff(permission?: Permission): Promise<CurrentStaf
 /** Admin guard for server actions: throws instead of redirecting when permission is missing. */
 export async function requireStaffAction(permission?: Permission): Promise<CurrentStaff> {
   const staff = await getStaffSession();
-  if (!staff || !staff.totpEnabled || staff.mfaPending) redirect("/admin/login");
+  if (!staffSignedIn(staff)) redirect("/admin/login");
   if (permission && !can(staff.role, permission)) throw new PermissionError();
   return staff;
 }

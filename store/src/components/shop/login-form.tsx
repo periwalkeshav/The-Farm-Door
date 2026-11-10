@@ -2,60 +2,68 @@
 
 import { useActionState } from "react";
 import { loginAction, type LoginState } from "@/actions/auth";
+import { FieldError, useForm } from "@/components/form";
 import { Notice } from "@/components/ui";
+import { loginCodeSchema, loginEmailSchema } from "@/lib/form-schemas";
+import { useI18n } from "@/i18n/client";
 
 export function LoginForm({ next, googleEnabled }: { next: string; googleEnabled: boolean }) {
+  const { t, href } = useI18n();
   const [state, action, pending] = useActionState<LoginState, FormData>(loginAction, null);
   const stage = state?.stage ?? "email";
+  const emailForm = useForm({ schema: loginEmailSchema, action });
+  const codeForm = useForm({ schema: loginCodeSchema, action });
   return (
     <div className="card p-6 sm:p-8">
       {state?.message && (
         <Notice tone={state.error ? "error" : "success"} className="mb-5">
-          {state.message}
+          {t(state.message)}
         </Notice>
       )}
       {stage === "email" ? (
-        <form action={action} className="space-y-4">
+        <form {...emailForm.formProps} className="space-y-4">
           <input type="hidden" name="next" value={next} />
           <div>
-            <label htmlFor="login-email" className="label">
-              Email address
+            <label htmlFor={emailForm.id("email")} className="label">
+              {t("Email address")}
             </label>
-            <input id="login-email" name="email" type="email" autoComplete="email" required defaultValue={state?.email} className="field" />
+            <input {...emailForm.field("email")} type="email" autoComplete="email" maxLength={200} defaultValue={state?.email} className="field" />
+            <FieldError f={emailForm} name="email" />
           </div>
           <button type="submit" disabled={pending} className="w-full rounded-full bg-forest px-5 py-3 font-bold text-ivory disabled:opacity-60">
-            {pending ? "Sending code…" : "Email me a sign-in code"}
+            {pending ? t("Sending code…") : t("Email me a sign-in code")}
           </button>
-          <p className="text-center text-xs text-muted">No password needed. New here? Your account is created when you sign in.</p>
+          <p className="text-center text-xs text-muted">{t("No password needed. New here? Your account is created when you sign in.")}</p>
         </form>
       ) : (
-        <form action={action} className="space-y-4">
+        <form {...codeForm.formProps} className="space-y-4">
           <input type="hidden" name="next" value={next} />
           <input type="hidden" name="email" value={state?.email} />
           <input type="hidden" name="intent" value="verify" />
           <div>
-            <label htmlFor="login-code" className="label">
-              6-digit code
+            <label htmlFor={codeForm.id("code")} className="label">
+              {t("6-digit code")}
             </label>
             <input
-              id="login-code"
-              name="code"
+              {...codeForm.field("code")}
               inputMode="numeric"
               autoComplete="one-time-code"
-              pattern="[0-9]{6}"
               maxLength={6}
-              required
               autoFocus
+              onInput={(e) => {
+                e.currentTarget.value = e.currentTarget.value.replace(/\D/g, "").slice(0, 6);
+              }}
               className="field text-center text-2xl tracking-[.5em]"
             />
+            <FieldError f={codeForm} name="code" className="text-center" />
           </div>
           <button type="submit" disabled={pending} className="w-full rounded-full bg-forest px-5 py-3 font-bold text-ivory disabled:opacity-60">
-            {pending ? "Checking…" : "Sign in"}
+            {pending ? t("Checking…") : t("Sign in")}
           </button>
           <p className="text-center text-sm text-muted">
-            Wrong email or no code?{" "}
-            <a href={`/login?next=${encodeURIComponent(next)}`} className="font-semibold text-forest underline">
-              Start again
+            {t("Wrong email or no code?")}{" "}
+            <a href={`${href("/login")}?next=${encodeURIComponent(next)}`} className="font-semibold text-forest underline">
+              {t("Start again")}
             </a>
           </p>
         </form>
@@ -64,7 +72,7 @@ export function LoginForm({ next, googleEnabled }: { next: string; googleEnabled
         <>
           <div className="my-5 flex items-center gap-3 text-xs text-muted">
             <span className="h-px flex-1 bg-line" />
-            or
+            {t("or")}
             <span className="h-px flex-1 bg-line" />
           </div>
           <a href={`/api/auth/google/start?next=${encodeURIComponent(next)}`} className="flex w-full items-center justify-center gap-2 rounded-full border border-line bg-paper px-5 py-3 font-semibold text-ink hover:border-forest">
@@ -74,7 +82,7 @@ export function LoginForm({ next, googleEnabled }: { next: string; googleEnabled
               <path fill="#FBBC05" d="M5.4 14.4a7.2 7.2 0 0 1 0-4.7V6.6h-4a12 12 0 0 0 0 10.9z" />
               <path fill="#EA4335" d="M12 4.8c1.7 0 3.3.6 4.5 1.8l3.4-3.4A12 12 0 0 0 1.4 6.6l4 3.1C6.3 6.9 8.9 4.8 12 4.8z" />
             </svg>
-            Continue with Google
+            {t("Continue with Google")}
           </a>
         </>
       )}

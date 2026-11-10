@@ -34,7 +34,7 @@ export async function makeProductWithVariant(opts: { pricePaise?: number; onHand
       sku: `SKU-${Math.random().toString(36).slice(2, 8)}`,
       optionValues: { Size: "250 g" },
       pricePaise: opts.pricePaise ?? 19_900,
-      mrpPaise: 24_900,
+      mrpPaise: Math.max(24_900, opts.pricePaise ?? 19_900),
       netWeightGrams: net,
       shippingWeightGrams: net + 30,
       hsnCode: "09103030",

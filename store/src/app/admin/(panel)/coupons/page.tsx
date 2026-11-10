@@ -58,7 +58,7 @@ async function Coupons() {
       </DataTable>
       <Panel title="New coupon" className="mt-6">
         <CouponForm
-          coupon={{ id: null, code: "", description: "", type: "PERCENT", value: "", maxDiscount: "", minOrder: "", scope: "ALL", productIds: [], categoryIds: [], startsOn: "", endsOn: "", usageLimitTotal: "", usageLimitPerCustomer: "", isActive: true }}
+          coupon={{ id: null, code: "", description: "", type: "PERCENT", value: "", maxDiscount: "", minOrder: "", scope: "ALL", productIds: [], categoryIds: [], startsOn: "", endsOn: "", usageLimitTotal: "", usageLimitPerCustomer: "", isActive: true, isFeatured: false }}
           products={prods}
           categories={cats}
         />

@@ -29,11 +29,25 @@ const schema = z.object({
   SMTP_URL: z.string().default(""),
   EMAIL_FROM: z.string().default("The Farm Door <orders@thefarmdoor.com>"),
 
+  /** WhatsApp order updates: off, log (development: recorded in the email log only) or cloud (Meta WhatsApp Cloud API). */
+  WHATSAPP_TRANSPORT: z.enum(["off", "log", "cloud"]).default("off"),
+  WHATSAPP_TOKEN: z.string().default(""),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().default(""),
+  WHATSAPP_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/).default("v22.0"),
+  WHATSAPP_TEMPLATE_LANG: z.string().default("en"),
+
   GOOGLE_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
 
   /** Allows simulated payment/shipping providers outside development. Never set this on the live site. */
   ALLOW_MOCK_PROVIDERS: z.enum(["true", "false"]).default("false"),
+  /** True when every request reaches the app through Cloudflare (Render's edge, or your own Cloudflare zone): client IPs are then read from CF-Connecting-IP. */
+  TRUST_CLOUDFLARE: z.enum(["true", "false"]).default("false"),
+  /**
+   * "off" lets staff sign in with email and password only, skipping the authenticator-app code.
+   * For local development and demos; the admin shows a warning while it's off. Leave unset on the live site.
+   */
+  STAFF_TWO_STEP: z.enum(["required", "off"]).default("required"),
 });
 
 export type Env = z.infer<typeof schema>;
@@ -65,12 +79,23 @@ export function env(): Env {
   return value;
 }
 
+/** Tests only: re-read the environment after changing process.env. */
+export function resetEnvForTests() {
+  if (process.env.NODE_ENV !== "test") throw new Error("resetEnvForTests is for tests only");
+  cached = undefined;
+}
+
 export function isMockPayments() {
   return env().PAYMENTS_PROVIDER === "mock";
 }
 
 export function isMockShipping() {
   return env().SHIPPING_PROVIDER === "mock";
+}
+
+/** Whether staff need the authenticator-app code to sign in (see STAFF_TWO_STEP). */
+export function staffTwoStepRequired() {
+  return env().STAFF_TWO_STEP !== "off";
 }
 
 /** True when any part of checkout is simulated or uses Razorpay test keys. Drives the TEST MODE banner. */

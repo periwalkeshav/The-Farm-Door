@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
-import { discountPercent, formatINR, pricePer100g } from "@/lib/money";
+import type { Locale } from "@/i18n/config";
+import { translator } from "@/i18n/translate";
+import { discountPercent, formatINR, pricePer100 } from "@/lib/money";
 
 export function cn(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(" ");
@@ -54,30 +56,47 @@ export function Notice({ tone = "info", children, className }: { tone?: "info" |
   );
 }
 
-export function Price({ pricePaise, mrpPaise, netWeightGrams, size = "md" }: { pricePaise: number; mrpPaise: number; netWeightGrams?: number; size?: "sm" | "md" | "lg" }) {
+/** `netQuantity` (in grams, or millilitres when `netUnit` is "ml") adds the price per 100 g / 100 ml. */
+export function Price({
+  pricePaise,
+  mrpPaise,
+  netQuantity,
+  netUnit = "g",
+  size = "md",
+  lang = "en",
+}: {
+  pricePaise: number;
+  mrpPaise: number;
+  netQuantity?: number;
+  netUnit?: "g" | "ml";
+  size?: "sm" | "md" | "lg";
+  lang?: Locale;
+}) {
+  const t = translator(lang);
   const off = discountPercent(pricePaise, mrpPaise);
-  const per100 = netWeightGrams ? pricePer100g(pricePaise, netWeightGrams) : null;
+  const per100 = netQuantity ? pricePer100(pricePaise, netQuantity) : null;
   return (
     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
       <span className={cn("font-bold text-forest", size === "lg" ? "text-3xl" : size === "md" ? "text-lg" : "text-base")}>{formatINR(pricePaise)}</span>
       {off > 0 && (
         <>
           <span className={cn("text-muted line-through", size === "lg" ? "text-base" : "text-sm")}>
-            <span className="sr-only">MRP </span>
+            <span className="sr-only">{t("MRP")} </span>
             {formatINR(mrpPaise)}
           </span>
-          <span className={cn("font-semibold text-chilli", size === "lg" ? "text-base" : "text-sm")}>{off}% off</span>
+          <span className={cn("font-semibold text-chilli", size === "lg" ? "text-base" : "text-sm")}>{t("{percent}% off", { percent: off })}</span>
         </>
       )}
-      {per100 !== null && <span className="w-full text-xs text-muted">{formatINR(per100)} / 100 g · MRP incl. of all taxes</span>}
+      {per100 !== null && <span className="w-full text-xs text-muted">{t("{price} / 100 {unit} · MRP incl. of all taxes", { price: formatINR(per100), unit: netUnit })}</span>}
     </div>
   );
 }
 
-export function Stars({ rating, count, size = 14 }: { rating: number; count?: number; size?: number }) {
-  const label = `${rating.toFixed(1)} out of 5${count !== undefined ? `, ${count} review${count === 1 ? "" : "s"}` : ""}`;
+export function Stars({ rating, count, size = 14, lang = "en" }: { rating: number; count?: number; size?: number; lang?: Locale }) {
+  const t = translator(lang);
+  const label = `${t("{rating} out of 5", { rating: rating.toFixed(1) })}${count !== undefined ? `, ${t(count === 1 ? "{count} review" : "{count} reviews", { count })}` : ""}`;
   return (
-    <span className="inline-flex items-center gap-1" aria-label={label}>
+    <span className="inline-flex items-center gap-1" role="img" aria-label={label}>
       <span className="inline-flex" aria-hidden="true">
         {[1, 2, 3, 4, 5].map((i) => (
           <svg key={i} width={size} height={size} viewBox="0 0 20 20" className={i <= Math.round(rating) ? "fill-saffron" : "fill-line"}>
@@ -100,7 +119,8 @@ export function Logo({ className }: { className?: string }) {
         <path d="M11 30.5c3.6-2.6 7.4-2.8 10.4-1.4 2.6 1.2 5 1.1 7.6-.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         <path d="M5 35h30" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
       </svg>
-      <span className="font-display text-xl font-semibold tracking-tight">The Farm Door</span>
+      {/* A size smaller on the narrowest phones, so the header icons fit beside it. */}
+      <span className="font-display text-lg font-semibold tracking-tight min-[400px]:text-xl">The Farm Door</span>
     </span>
   );
 }

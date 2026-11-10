@@ -1,6 +1,7 @@
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { getDb } from "@/db";
 import { cookieName, cookieOptions } from "@/data/cookies";
+import { clientIp, userAgent } from "@/data/request";
 import { safeEqual } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { customerFromGoogle } from "@/server/auth/customer";
@@ -58,8 +59,7 @@ export async function GET(request: Request) {
   } catch {
     return fail();
   }
-  const h = await headers();
-  const { token, expiresAt } = await createSession(db, "CUSTOMER", customerId, { ip: h.get("x-forwarded-for")?.split(",")[0] ?? "", userAgent: h.get("user-agent") ?? "" });
+  const { token, expiresAt } = await createSession(db, "CUSTOMER", customerId, { ip: await clientIp(), userAgent: await userAgent() });
   jar.set(cookieName("session"), token, cookieOptions({ expires: expiresAt }));
   const cartId = await mergeIntoCustomerCart(db, jar.get(cookieName("cart"))?.value ?? null, customerId);
   jar.set(cookieName("cart"), cartId, cookieOptions({ maxAgeSeconds: 60 * 24 * 60 * 60 }));
