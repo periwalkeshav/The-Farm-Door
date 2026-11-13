@@ -271,7 +271,9 @@ which comes with the code:
 3. Optional, for longer storage: free S3-compatible storage such as Cloudflare R2 or Backblaze B2. Add
    `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID` and
    `BACKUP_S3_SECRET_ACCESS_KEY`, and set the bucket to delete files after about 30 days. Without a
-   bucket, each backup is kept for 7 days under the workflow run.
+   bucket, each backup is kept for 7 days under the workflow run. That only works while the GitHub
+   repository is **private**: anyone can download a public repository's workflow files, so the job
+   refuses to run there without a bucket.
 4. In **Actions › Nightly database backup**, press **Run workflow** once to check it works.
 
 Each backup is encrypted. To restore, run these two commands, in order:

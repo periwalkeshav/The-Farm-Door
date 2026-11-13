@@ -6,7 +6,10 @@
 #                         Without it the backups can't be opened.
 # Optional, to keep backups in S3-compatible storage (Cloudflare R2 and Backblaze B2 have free tiers):
 #   BACKUP_S3_BUCKET, BACKUP_S3_ENDPOINT, BACKUP_S3_ACCESS_KEY_ID, BACKUP_S3_SECRET_ACCESS_KEY
-# Without a bucket, each backup is kept as a workflow artifact for 7 days.
+# Without a bucket, each backup is kept as a workflow artifact for 7 days, but only while this
+# repository is private: anyone can download a public repository's artifacts, so the job refuses.
+# Until the two required secrets are set (i.e. before launch), each run just notes that backups
+# aren't set up yet and succeeds.
 #
 # Restore: gpg --decrypt farmdoor-YYYY-MM-DD.dump.gpg > farmdoor.dump
 #          pg_restore --no-owner --dbname "<empty database URL>" farmdoor.dump
@@ -30,20 +33,38 @@ jobs:
       S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
     steps:
       - name: Check the secrets are set
+        id: setup
         run: |
-          if [ -z "$DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
-            echo "::error::Add the BACKUP_DATABASE_URL and BACKUP_PASSPHRASE repository secrets."
+          if [ -z "$DATABASE_URL" ] && [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::notice::Backups aren't set up yet: add the BACKUP_DATABASE_URL and BACKUP_PASSPHRASE repository secrets once the live database exists."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::Only one of BACKUP_DATABASE_URL and BACKUP_PASSPHRASE is set. Add both."
+            exit 1
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Make sure backups won't be public
+        if: steps.setup.outputs.ready == 'true' && env.S3_BUCKET == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" != "true" ]; then
+            echo "::error::This repository is public, so anyone could download a backup kept as a workflow artifact. Make the repository private, or add the BACKUP_S3_* secrets to keep backups in your own storage."
             exit 1
           fi
 
       - name: Dump the database
+        if: steps.setup.outputs.ready == 'true'
         run: |
-          # The PostgreSQL 17 client can back up servers up to version 17.
-          docker run --rm -e DATABASE_URL postgres:17 sh -c 'pg_dump "$DATABASE_URL" --format=custom --no-owner' > farmdoor.dump
+          # pg_dump backs up servers of its own version or older: the PostgreSQL 18 client covers 17 and 18.
+          docker run --rm -e DATABASE_URL postgres:18 sh -c 'pg_dump "$DATABASE_URL" --format=custom --no-owner' > farmdoor.dump
           test -s farmdoor.dump
           echo "Backup size: $(du -h farmdoor.dump | cut -f1)"
 
       - name: Encrypt
+        if: steps.setup.outputs.ready == 'true'
         run: |
           NAME="farmdoor-$(TZ=Asia/Kolkata date +%Y-%m-%d).dump.gpg"
           gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" --symmetric --cipher-algo AES256 --output "$NAME" farmdoor.dump
@@ -51,7 +72,7 @@ jobs:
           echo "BACKUP_FILE=$NAME" >> "$GITHUB_ENV"
 
       - name: Upload to storage
-        if: env.S3_BUCKET != ''
+        if: steps.setup.outputs.ready == 'true' && env.S3_BUCKET != ''
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
@@ -60,8 +81,8 @@ jobs:
         run: aws s3 cp "$BACKUP_FILE" "s3://$S3_BUCKET/$BACKUP_FILE" --endpoint-url "$S3_ENDPOINT"
 
       - name: Keep as a workflow artifact
-        if: env.S3_BUCKET == ''
-        uses: actions/upload-artifact@v4
+        if: steps.setup.outputs.ready == 'true' && env.S3_BUCKET == ''
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BACKUP_FILE }}
           path: ${{ env.BACKUP_FILE }}
