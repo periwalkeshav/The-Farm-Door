@@ -110,15 +110,11 @@ export function Stars({ rating, count, size = 14, lang = "en" }: { rating: numbe
 }
 
 export function Logo({ className }: { className?: string }) {
-  // Placeholder mark until the official logo file is supplied.
+  // The mark from the official logo (arch, door and fields), cut out of TFD Logo.jpg on a transparent background.
   return (
     <span className={cn("inline-flex items-center gap-2 text-forest", className)}>
-      <svg viewBox="0 0 40 40" className="size-8 shrink-0" aria-hidden="true">
-        <path d="M8.5 35V18.5a11.5 11.5 0 0 1 23 0V35" fill="none" stroke="currentColor" strokeWidth="2.4" />
-        <circle cx="20" cy="23" r="4.6" fill="#E3A33B" />
-        <path d="M11 30.5c3.6-2.6 7.4-2.8 10.4-1.4 2.6 1.2 5 1.1 7.6-.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path d="M5 35h30" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-      </svg>
+      {/* eslint-disable-next-line @next/next/no-img-element -- tiny pre-sized static file */}
+      <img src="/brand/tfd-mark-36.png" srcSet="/brand/tfd-mark-36.png 1x, /brand/tfd-mark-72.png 2x, /brand/tfd-mark-108.png 3x" alt="" width={33} height={36} className="h-9 w-auto shrink-0" />
       {/* A size smaller on the narrowest phones, so the header icons fit beside it. */}
       <span className="font-display text-lg font-semibold tracking-tight min-[400px]:text-xl">The Farm Door</span>
     </span>

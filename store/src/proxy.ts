@@ -65,7 +65,7 @@ function isPageLoad(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Everything except APIs, Next.js files, images, feeds and metadata files.
-    "/((?!api|_next|media|feeds|icon\\.svg|apple-icon\\.png|robots\\.txt|sitemap\\.xml|favicon\\.ico).*)",
+    // Everything except APIs, Next.js files, images (including the logo files in public/brand), feeds and metadata files.
+    "/((?!api|_next|media|brand/|feeds|icon\\.png|apple-icon\\.png|robots\\.txt|sitemap\\.xml|favicon\\.ico).*)",
   ],
 };

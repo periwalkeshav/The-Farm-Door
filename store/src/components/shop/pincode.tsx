@@ -95,7 +95,7 @@ export function DeliverTo({ className, labels }: { className?: string; labels: {
     };
   }, [open]);
 
-  async function save(e: React.FormEvent) {
+  async function save(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!isValidPincode(value)) {
       setError(labels.invalid);

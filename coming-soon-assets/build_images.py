@@ -31,7 +31,7 @@ OG = f"""<!doctype html>
   html, body {{ width: 1200px; height: 630px; overflow: hidden; }}
   .og {{ position: relative; width: 1200px; height: 630px; display: grid;
         grid-template-columns: 560px 1fr; align-items: center; padding-left: 80px; }}
-  .og .brand svg {{ width: 44px; height: 44px; }}
+  .og .brand img {{ height: 52px; width: auto; }}
   .og .brand span {{ font-size: 28px; }}
   .og .brand {{ display: flex; width: fit-content; }}
   .og .pill {{ display: flex; width: fit-content; margin-top: 40px; font-size: 14px; }}
@@ -42,7 +42,7 @@ OG = f"""<!doctype html>
 <body><div class="og">
   <div>
     <div class="brand">
-      <svg viewBox="0 0 40 40"><path d="M8.5 35V18.5a11.5 11.5 0 0 1 23 0V35" fill="none" stroke="#1F3B2D" stroke-width="2.4"/><circle cx="20" cy="23" r="4.6" fill="#E3A33B"/><path d="M11 30.5c3.6-2.6 7.4-2.8 10.4-1.4 2.6 1.2 5 1.1 7.6-.5" fill="none" stroke="#1F3B2D" stroke-width="2" stroke-linecap="round"/><path d="M5 35h30" stroke="#1F3B2D" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <img src="tfd-mark.png" alt="">
       <span>The Farm Door</span>
     </div>
     <p class="pill"><span class="dot"></span>Launching soon</p>
@@ -54,13 +54,9 @@ OG = f"""<!doctype html>
 """
 
 ICON = """<!doctype html>
-<html><head><style>html,body{margin:0;width:180px;height:180px;overflow:hidden;background:#1F3B2D}</style></head>
-<body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="180" height="180">
-  <rect width="64" height="64" fill="#1F3B2D"/>
-  <path d="M20 49V31a12 12 0 0 1 24 0v18" fill="none" stroke="#F7F2E8" stroke-width="3.4"/>
-  <circle cx="32" cy="35" r="5.6" fill="#E3A33B"/>
-  <path d="M15.5 49h33" stroke="#F7F2E8" stroke-width="3.4" stroke-linecap="round"/>
-</svg></body></html>
+<html><head><style>html,body{margin:0;width:180px;height:180px;overflow:hidden;background:#F7F2E8}
+body{display:grid;place-items:center} img{height:134px;width:auto}</style></head>
+<body><img src="tfd-mark.png" alt=""></body></html>
 """
 
 

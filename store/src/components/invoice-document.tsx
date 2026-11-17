@@ -9,6 +9,8 @@ export function InvoiceDocument({ title, number, date, orderNumber, snapshot }: 
     <article className="mx-auto max-w-[210mm] bg-white p-8 text-[13px] text-black print:p-0">
       <header className="flex items-start justify-between gap-6 border-b border-black pb-4">
         <div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- tiny pre-sized static file; matches the PDF */}
+          <img src="/brand/tfd-mark-108.png" alt="" width={36} height={40} className="mb-2 h-10 w-auto" />
           <p className="text-xl font-bold">{s.seller.legalName}</p>
           {s.seller.tradeName && s.seller.tradeName !== s.seller.legalName && <p>Trade name: {s.seller.tradeName}</p>}
           <p>{s.seller.address}</p>

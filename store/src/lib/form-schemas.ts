@@ -110,7 +110,7 @@ export const backupCodeSchema = z.object({
   ),
 });
 
-export const staffRole = z.enum(["OWNER", "MANAGER", "PACKER", "ACCOUNTANT"], { message: "Choose a role." });
+export const staffRole = z.enum(["OWNER", "MANAGER", "PACKER", "ACCOUNTANT"], { error: "Choose a role." });
 
 export const createStaffSchema = z.object({
   name: rules.personName("Enter their name."),
@@ -393,7 +393,7 @@ export const csvUploadSchema = z.object({
 });
 
 export const enquiryUpdateSchema = z.object({
-  status: z.enum(["NEW", "CONTACTED", "CLOSED"], { message: "Choose a status." }),
+  status: z.enum(["NEW", "CONTACTED", "CLOSED"], { error: "Choose a status." }),
   staffNote: rules.optionalText(2000, "The note"),
 });
 
@@ -470,7 +470,7 @@ const idList = z.preprocess((v) => (Array.isArray(v) ? v : v ? [v] : []), z.arra
 /** The customer's report. Photos are checked separately (they're files, resized in the browser first). */
 export const problemReportSchema = z.object({
   items: idList.pipe(z.array(z.number()).min(1, "Tick the item (or items) with the problem.")),
-  kind: z.enum(PROBLEM_KINDS, { message: "Choose what went wrong." }),
+  kind: z.enum(PROBLEM_KINDS, { error: "Choose what went wrong." }),
   description: rules.requiredText("Tell us what happened.", 10, 1000, "The description"),
 });
 

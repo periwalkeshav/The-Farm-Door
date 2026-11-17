@@ -2,6 +2,7 @@
  * Transactional email templates. Plain HTML with inline styles (email clients
  * ignore stylesheets). Every value from the database is escaped.
  */
+import { env } from "@/lib/env";
 import { formatINR } from "@/lib/money";
 
 export function esc(value: unknown): string {
@@ -24,7 +25,7 @@ function layout(opts: { preheader: string; heading: string; body: string; footer
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.ivory};padding:24px 12px">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
-<tr><td style="padding:8px 4px 20px;font-family:Georgia,serif;font-size:22px;font-weight:bold;color:${C.forest}">The Farm Door</td></tr>
+<tr><td style="padding:8px 4px 20px;font-family:Georgia,serif;font-size:22px;font-weight:bold;color:${C.forest}"><img src="${esc(env().APP_URL)}/brand/tfd-mark-72.png" width="33" height="36" alt="" style="vertical-align:middle;border:0;margin-right:8px">The Farm Door</td></tr>
 <tr><td style="background:${C.paper};border:1px solid ${C.line};border-radius:16px;padding:28px 24px">
 <h1 style="margin:0 0 16px;font-family:Georgia,serif;font-size:24px;line-height:1.25;color:${C.forest}">${esc(opts.heading)}</h1>
 ${opts.body}

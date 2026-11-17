@@ -35,7 +35,7 @@ Diwali is on Sunday 8 November 2026. Working back from a launch in the second ha
   Shiprocket compares all its partners for the pincode, including Blue Dart, which is DHL Group's
   courier for deliveries inside India.
 
-Still to come from you: **logo file**, **sourcing story** (About page), and the **FSSAI number** once issued.
+Still to come from you: **sourcing story** (About page) and the **FSSAI number** once issued. (Logo: received and in place, 17 November 2026.)
 
 ## 2. Registrations and accounts
 

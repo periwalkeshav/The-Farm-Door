@@ -92,7 +92,7 @@ export function useForm({ schema, values = formValues, action, onValid, state, s
     // (which just reloads the page) instead of a GET that would put typed details in the URL.
     // (Passing the server action here as a no-JS fallback trips a Next.js bug with cookies.)
     method: "post" as const,
-    onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    onSubmit(e: React.SubmitEvent<HTMLFormElement>) {
       e.preventDefault();
       const form = e.currentTarget;
       const found = check(form);

@@ -7,14 +7,15 @@ This guide puts the coming-soon page on **thefarmdoor.com** (registered at GoDad
 | Path | What it is | Upload it? |
 |---|---|---|
 | `coming-soon/index.html` | The page itself: door animation, launch message and email sign-up form | Yes |
-| `coming-soon/favicon.svg` | Browser tab icon | Yes |
+| `coming-soon/favicon.png` | Browser tab icon | Yes |
+| `coming-soon/tfd-mark-36.png`, `-72.png`, `-108.png` | The logo mark in the page header (three sharpness levels for different screens) | Yes |
 | `coming-soon/apple-touch-icon.png` | Icon shown when someone saves the site to an iPhone home screen | Yes |
 | `coming-soon/og-image.jpg` | Preview image that appears when the link is shared on WhatsApp, Instagram, Facebook or X | Yes |
 | `coming-soon-assets/` | The script that generates the preview image and icon | **No**, keep this on your computer |
 
 ## Before you deploy
 
-- [ ] **Logo:** The page currently uses a placeholder arch mark. Send me your logo file (SVG preferred, or a high-resolution PNG) and I'll swap it in and regenerate the preview image.
+- [x] **Logo:** the official mark (from `TFD Logo.jpg`) is in the page header, the browser tab icon, the home-screen icon and the preview image. Redeploy the `coming-soon` folder to Netlify to put it live.
 - [x] **Domain:** `thefarmdoor.com`. The page's link-preview settings already point to it.
 - [ ] **Optional:** a contact email and Instagram handle for the footer. I left these out rather than add made-up details.
 

@@ -3,7 +3,12 @@
  * at request time in the brand colours, with the arched-door illustration.
  * Pages with their own photo (products, recipes) use the photo instead.
  */
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
+
+// The logo mark, read once (the file never changes between requests).
+const MARK = `data:image/png;base64,${await readFile(join(process.cwd(), "public/brand/tfd-mark.png"), "base64")}`;
 
 export const OG_SIZE = { width: 1200, height: 630 };
 export const OG_CONTENT_TYPE = "image/png";
@@ -13,7 +18,11 @@ export function brandImage({ eyebrow, title, subtitle }: { eyebrow?: string; tit
     (
       <div style={{ width: "100%", height: "100%", display: "flex", background: "#F7F2E8", padding: "64px 72px", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", flexDirection: "column", maxWidth: 700 }}>
-          <div style={{ display: "flex", fontSize: 30, fontWeight: 700, color: "#965818", letterSpacing: 4, textTransform: "uppercase" }}>{eyebrow ?? "The Farm Door"}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- next/og only draws plain img tags */}
+            <img src={MARK} width={63} height={70} alt="" />
+            <div style={{ display: "flex", fontSize: 30, fontWeight: 700, color: "#965818", letterSpacing: 4, textTransform: "uppercase" }}>{eyebrow ?? "The Farm Door"}</div>
+          </div>
           <div style={{ display: "flex", fontSize: title.length > 28 ? 64 : 84, fontWeight: 700, color: "#1F3B2D", lineHeight: 1.05, marginTop: 20 }}>{title}</div>
           {subtitle && <div style={{ display: "flex", fontSize: 32, color: "#6A6158", marginTop: 24, lineHeight: 1.35 }}>{subtitle}</div>}
           <div style={{ display: "flex", fontSize: 26, color: "#1F3B2D", marginTop: 40, fontWeight: 700 }}>thefarmdoor.com</div>

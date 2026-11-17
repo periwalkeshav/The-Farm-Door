@@ -9,9 +9,13 @@
  * typed in Hindi) shows as "?" in the PDF. The printable invoice page shows it
  * correctly.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import PDFDocument from "pdfkit";
 import type { InvoiceSnapshot } from "@/db/schema";
 
+/** The logo mark, as on the site header and the printable invoice. */
+const LOGO = readFileSync(join(process.cwd(), "public/brand/tfd-mark.png"));
 const MARGIN = 36;
 const A4 = { width: 595.28, height: 841.89 };
 const WIDTH = A4.width - MARGIN * 2;
@@ -46,7 +50,8 @@ export async function invoicePdf({ title, number, date, orderNumber, snapshot: s
 
   /* Seller and document details */
   const top = doc.y;
-  doc.font("Helvetica-Bold").fontSize(14).text(s.seller.legalName, MARGIN, top, { width: WIDTH * 0.6 });
+  doc.image(LOGO, MARGIN, top, { height: 40 });
+  doc.font("Helvetica-Bold").fontSize(14).text(s.seller.legalName, MARGIN, top + 48, { width: WIDTH * 0.6 });
   doc.font("Helvetica").fontSize(9);
   const sellerLines = [
     s.seller.tradeName && s.seller.tradeName !== s.seller.legalName ? `Trade name: ${s.seller.tradeName}` : "",
